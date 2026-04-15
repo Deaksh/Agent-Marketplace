@@ -15,8 +15,44 @@ export default function Page() {
 }
 
 function ExecutePanel() {
-  async function execute(formData: FormData) {
-    "use server";
+  "use client";
+
+  // Client-side submission avoids Next Server Actions origin checks
+  // that often fail on forwarded ports (Codespaces / tunnels).
+  // This UI remains a thin client; the backend is still the product.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const React = require("react") as typeof import("react");
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const { useMemo, useState } = React;
+
+  type ExecResp = { execution_id: string; status: string };
+  type ExecFull = {
+    execution_id: string;
+    status: string;
+    result?: string | null;
+    confidence?: number | null;
+    risks?: unknown[] | null;
+    recommendations?: unknown[] | null;
+    audit_trail?: unknown[] | null;
+    explainability?: unknown | null;
+  };
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [pending, setPending] = useState(false);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [lastExecutionId, setLastExecutionId] = useState<string>("");
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [result, setResult] = useState<ExecFull | null>(null);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const pollUrl = useMemo(
+    () => (lastExecutionId ? `/api/executions/${lastExecutionId}` : ""),
+    [lastExecutionId]
+  );
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+
     const intent = String(formData.get("intent") || "");
     const region = String(formData.get("region") || "EU");
     const dataTypesRaw = String(formData.get("data_types") || "PII,biometric");
@@ -32,22 +68,33 @@ function ExecutePanel() {
       dpia_done: false,
     };
 
-    const res = await fetch("/api/execute", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ intent, context }),
-      cache: "no-store",
-    });
-    const body = await res.json();
+    setPending(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/execute", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ intent, context }),
+      });
+      const body = (await res.json()) as ExecResp;
+      setLastExecutionId(body.execution_id);
+    } finally {
+      setPending(false);
+    }
+  }
 
-    return body as { execution_id: string; status: string };
+  async function pollOnce() {
+    if (!pollUrl) return;
+    const res = await fetch(pollUrl, { cache: "no-store" });
+    const body = (await res.json()) as ExecFull;
+    setResult(body);
   }
 
   return (
     <section className="mt-6 grid gap-6 md:grid-cols-2">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
         <h2 className="text-lg font-semibold">Create execution</h2>
-        <form action={execute} className="mt-4 grid gap-3">
+        <form onSubmit={onSubmit} className="mt-4 grid gap-3">
           <label className="grid gap-1 text-sm">
             <span className="text-zinc-300">Intent</span>
             <input
@@ -84,14 +131,44 @@ function ExecutePanel() {
           </label>
           <button
             type="submit"
+            disabled={pending}
             className="mt-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold hover:bg-indigo-500"
           >
-            Execute
+            {pending ? "Executing..." : "Execute"}
           </button>
         </form>
         <p className="mt-3 text-xs text-zinc-400">
           After creating an execution, poll <code className="text-zinc-200">/api/executions/&lt;id&gt;</code>.
         </p>
+        {lastExecutionId ? (
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300">
+            <div>
+              Execution id: <code className="text-zinc-100">{lastExecutionId}</code>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={pollOnce}
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 hover:bg-zinc-800"
+              >
+                Poll once
+              </button>
+              <a
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 hover:bg-zinc-800"
+                href={pollUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open JSON
+              </a>
+            </div>
+            {result ? (
+              <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
+{JSON.stringify(result, null, 2)}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
