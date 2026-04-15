@@ -32,7 +32,7 @@ function ExecutePanel() {
       dpia_done: false,
     };
 
-    const res = await fetch("http://127.0.0.1:5273/api/execute", {
+    const res = await fetch("/api/execute", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ intent, context }),
