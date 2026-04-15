@@ -62,7 +62,7 @@ class RegulationRetriever:
                     text=r.text,
                     version=r.version,
                     score=score,
-                    metadata=r.metadata or {},
+                    metadata=r.meta or {},
                 )
             )
         return sorted(snippets, key=lambda s: s.score, reverse=True)

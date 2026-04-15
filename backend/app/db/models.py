@@ -83,5 +83,5 @@ class RegulationUnit(SQLModel, table=True):
     title: str = ""
     text: str
     version: str = "unknown"
-    metadata: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
+    meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column("meta", SQLITE_JSON))
 
