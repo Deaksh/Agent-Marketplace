@@ -23,6 +23,7 @@ from app.db.session import get_session, init_db
 from app.orchestrator.orchestrator import Orchestrator
 from app.retrieval.regulations import RegulationRetriever
 from app.validator.validator import OutcomeValidator
+from app.ingestion.seed_regulations import seed_regulation_units
 
 
 class ExecuteRequest(BaseModel):
@@ -127,6 +128,16 @@ async def regulation_stats(session: AsyncSession = Depends(get_session)):
         "total_units": int(total or 0),
         "by_regulation_code": [{"regulation_code": c, "count": int(n)} for c, n in by_code],
     }
+
+
+@app.post("/regulations/seed")
+async def seed_regulations(session: AsyncSession = Depends(get_session)):
+    """
+    Dev/demo helper: seed a minimal GDPR corpus into `regulation_units`.
+
+    This is safe to call repeatedly (idempotent upsert).
+    """
+    return await seed_regulation_units(session=session)
 
 
 @app.get("/agents")

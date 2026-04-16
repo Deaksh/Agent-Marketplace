@@ -1,0 +1,67 @@
+[
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 5",
+    "title": "Principles relating to processing of personal data",
+    "text": "Personal data shall be processed lawfully, fairly and in a transparent manner. It shall be collected for specified, explicit and legitimate purposes and not further processed in a manner that is incompatible with those purposes. It shall be adequate, relevant and limited to what is necessary (data minimisation). It shall be accurate and kept up to date. It shall be kept in a form which permits identification of data subjects for no longer than is necessary (storage limitation). It shall be processed in a manner that ensures appropriate security (integrity and confidentiality). The controller shall be responsible for, and be able to demonstrate compliance with, these principles (accountability).",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  },
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 6",
+    "title": "Lawfulness of processing",
+    "text": "Processing shall be lawful only if and to the extent that at least one lawful basis applies, such as consent, contract necessity, legal obligation, vital interests, public task, or legitimate interests (subject to balancing and rights).",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  },
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 9",
+    "title": "Processing of special categories of personal data",
+    "text": "Processing of special categories of personal data (including biometric data for uniquely identifying a person) is prohibited unless specific conditions apply (e.g., explicit consent, substantial public interest, employment/social security law, vital interests, legal claims, etc.) with appropriate safeguards.",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  },
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 13",
+    "title": "Information to be provided where personal data are collected from the data subject",
+    "text": "Controllers must provide transparent information at collection, including purposes, lawful basis, retention periods, recipients, rights, and how to exercise them, plus contact details and complaint channels.",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  },
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 22",
+    "title": "Automated individual decision-making, including profiling",
+    "text": "Data subjects have the right not to be subject to decisions based solely on automated processing that produce legal or similarly significant effects, unless certain conditions apply and safeguards (such as human intervention, expressing views, contesting) are provided.",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  },
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 30",
+    "title": "Records of processing activities",
+    "text": "Controllers and processors should maintain records of processing activities, including purposes, categories of data and recipients, transfers, retention schedules, and security measures, to demonstrate accountability.",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  },
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 32",
+    "title": "Security of processing",
+    "text": "Controllers/processors must implement appropriate technical and organisational measures to ensure a level of security appropriate to risk (e.g., encryption, confidentiality, integrity, resilience, and testing).",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  },
+  {
+    "regulation_code": "GDPR",
+    "unit_id": "Art. 35",
+    "title": "Data protection impact assessment (DPIA)",
+    "text": "Where processing is likely to result in a high risk to rights and freedoms, the controller shall carry out an impact assessment prior to processing, assessing necessity, proportionality, risks, and measures to address them.",
+    "version": "seed",
+    "meta": { "source": "seed", "note": "Paraphrased excerpt for MVP seeding." }
+  }
+]
+

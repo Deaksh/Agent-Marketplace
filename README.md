@@ -20,6 +20,15 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8040 --reload --app-dir backend --reload-dir backend
 ```
 
+### Seed regulations (dev/demo)
+
+If your environment has no ingestion pipeline populating `regulation_units`, you can seed a small GDPR corpus:
+
+```bash
+curl -X POST http://127.0.0.1:8040/regulations/seed
+curl http://127.0.0.1:8040/regulations/stats
+```
+
 ### Frontend (Next.js)
 
 ```bash
