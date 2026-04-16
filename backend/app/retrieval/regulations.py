@@ -51,14 +51,16 @@ class RegulationRetriever:
         tokens = tokens[:6]  # cap for perf
 
         base_all = select(RegulationUnit).where(RegulationUnit.regulation_code == regulation_code)
-        base = base_all
-        if tokens:
-            base = base.where(or_(*[RegulationUnit.text.ilike(f"%{t}%") for t in tokens]))
-        else:
-            base = base.where(RegulationUnit.text.ilike(f"%{raw}%")) if raw else base
 
-        # 1) Keyword shortlist
-        shortlist = (await self._session.execute(base.limit(limit * 10))).scalars().all()
+        # 1) Keyword shortlist (best-effort). If it yields nothing, fall back to a regulation-code-only shortlist.
+        if tokens:
+            base_keyword = base_all.where(or_(*[RegulationUnit.text.ilike(f"%{t}%") for t in tokens]))
+        else:
+            base_keyword = base_all.where(RegulationUnit.text.ilike(f"%{raw}%")) if raw else base_all
+
+        candidates = (await self._session.execute(base_keyword.limit(limit * 10))).scalars().all()
+        if not candidates:
+            candidates = (await self._session.execute(base_all.limit(limit * 10))).scalars().all()
 
         # 2) Score: hybrid keyword + optional embedding rerank
         snippets: list[RegulationSnippet] = []
@@ -71,17 +73,25 @@ class RegulationRetriever:
             except Exception:  # noqa: BLE001
                 query_emb = None
 
-        for r in shortlist:
+        # Avoid embedding the entire corpus: rerank the top N candidates.
+        embed_limit = 20
+        cand_emb_cache: dict[str, list[float]] = {}
+
+        for i, r in enumerate(candidates):
             text_l = (r.text or "").lower()
             token_hits = sum(1 for t in tokens if t.lower() in text_l) if tokens else (1 if raw.lower() in text_l else 0)
             kw_score = min(1.0, 0.25 + 0.15 * token_hits + (min(800, len(r.text or "")) / 8000))
 
             emb_score = 0.0
-            if embedder and query_emb:
+            if embedder and query_emb and i < embed_limit:
                 try:
                     # Keep request payload small: embed (title + first chunk of text).
                     candidate_text = (r.title + "\n" + (r.text or "")[:1200]).strip()
-                    cand_emb = await embedder.embed(text=candidate_text)
+                    if r.unit_id in cand_emb_cache:
+                        cand_emb = cand_emb_cache[r.unit_id]
+                    else:
+                        cand_emb = await embedder.embed(text=candidate_text)
+                        cand_emb_cache[r.unit_id] = cand_emb
                     emb_score = max(0.0, cosine_similarity(query_emb, cand_emb))
                 except Exception:  # noqa: BLE001
                     emb_score = 0.0
@@ -99,28 +109,6 @@ class RegulationRetriever:
                     metadata=r.meta or {},
                 )
             )
-
-        # Fallback: if nothing matched, just return some units so downstream can still produce an answer,
-        # but with lower confidence.
-        if not snippets:
-            # IMPORTANT: don't reuse the keyword-filtered query, otherwise fallback still returns nothing.
-            rows2 = (
-                (await self._session.execute(base_all.limit(limit)))
-                .scalars()
-                .all()
-            )
-            for r in rows2:
-                snippets.append(
-                    RegulationSnippet(
-                        regulation_code=r.regulation_code,
-                        unit_id=r.unit_id,
-                        title=r.title,
-                        text=r.text,
-                        version=r.version,
-                        score=0.05,
-                        metadata=r.meta or {},
-                    )
-                )
 
         return sorted(snippets, key=lambda s: s.score, reverse=True)[:limit]
 

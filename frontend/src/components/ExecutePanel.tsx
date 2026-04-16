@@ -65,6 +65,8 @@ export function ExecutePanel() {
     const region = String(formData.get("region") || "EU");
     const dataTypesRaw = String(formData.get("data_types") || "PII,biometric");
     const company = String(formData.get("company") || "");
+    const dataRetention = String(formData.get("data_retention") || "");
+    const dpiaDone = formData.get("dpia_done") ? true : false;
 
     const context = {
       company: company || undefined,
@@ -73,7 +75,8 @@ export function ExecutePanel() {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
-      dpia_done: false,
+      data_retention: dataRetention || undefined,
+      dpia_done: dpiaDone,
     };
 
     setPending(true);
@@ -150,6 +153,18 @@ export function ExecutePanel() {
               defaultValue="PII,biometric"
               className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
             />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-zinc-300">Data retention</span>
+            <input
+              name="data_retention"
+              placeholder="e.g., 12 months"
+              className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
+            <span className="text-zinc-300">DPIA done</span>
+            <input name="dpia_done" type="checkbox" className="h-4 w-4" />
           </label>
           <button
             type="submit"

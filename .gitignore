@@ -7,3 +7,6 @@ oel.db
 
 # macOS
 .DS_Store
+
+# Local environment (never commit secrets)
+.env
