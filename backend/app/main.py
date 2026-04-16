@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.builtin.intent_parser import IntentParserAgent
@@ -18,7 +18,7 @@ from app.agents.builtin.risk_scorer import RiskScorerAgent
 from app.agents.registry import AgentRegistry, spec_to_dict
 from app.core.config import settings
 from app.db.models import Agent as AgentRow
-from app.db.models import AuditLog, Execution, ExecutionStep, Outcome
+from app.db.models import AuditLog, Execution, ExecutionStep, Outcome, RegulationUnit
 from app.db.session import get_session, init_db
 from app.orchestrator.orchestrator import Orchestrator
 from app.retrieval.regulations import RegulationRetriever
@@ -105,6 +105,28 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/regulations/stats")
+async def regulation_stats(session: AsyncSession = Depends(get_session)):
+    """
+    Quick visibility endpoint so operators can confirm ingestion is present.
+    """
+    total = (await session.execute(select(func.count()).select_from(RegulationUnit))).scalar_one()
+    by_code = (
+        (
+            await session.execute(
+                select(RegulationUnit.regulation_code, func.count())
+                .group_by(RegulationUnit.regulation_code)
+                .order_by(func.count().desc())
+            )
+        )
+        .all()
+    )
+    return {
+        "total_units": int(total or 0),
+        "by_regulation_code": [{"regulation_code": c, "count": int(n)} for c, n in by_code],
+    }
 
 
 @app.get("/agents")

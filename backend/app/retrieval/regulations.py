@@ -6,7 +6,9 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.models import RegulationUnit
+from app.retrieval.hf_embeddings import HfEmbeddingClient, cosine_similarity
 
 
 @dataclass(frozen=True)
@@ -54,14 +56,37 @@ class RegulationRetriever:
         else:
             base = base.where(RegulationUnit.text.ilike(f"%{raw}%")) if raw else base
 
-        rows = (await self._session.execute(base.limit(limit * 4))).scalars().all()
+        # 1) Keyword shortlist
+        shortlist = (await self._session.execute(base.limit(limit * 10))).scalars().all()
 
-        # naive scoring: token match count + small length normalization
+        # 2) Score: hybrid keyword + optional embedding rerank
         snippets: list[RegulationSnippet] = []
-        for r in rows:
+        query_emb: list[float] | None = None
+        embedder: HfEmbeddingClient | None = None
+        if settings.hf_token:
+            embedder = HfEmbeddingClient(token=settings.hf_token, model=settings.hf_embedding_model)
+            try:
+                query_emb = await embedder.embed(text=raw or query)
+            except Exception:  # noqa: BLE001
+                query_emb = None
+
+        for r in shortlist:
             text_l = (r.text or "").lower()
             token_hits = sum(1 for t in tokens if t.lower() in text_l) if tokens else (1 if raw.lower() in text_l else 0)
-            score = min(1.0, 0.25 + 0.15 * token_hits + (min(800, len(r.text or "")) / 8000))
+            kw_score = min(1.0, 0.25 + 0.15 * token_hits + (min(800, len(r.text or "")) / 8000))
+
+            emb_score = 0.0
+            if embedder and query_emb:
+                try:
+                    # Keep request payload small: embed (title + first chunk of text).
+                    candidate_text = (r.title + "\n" + (r.text or "")[:1200]).strip()
+                    cand_emb = await embedder.embed(text=candidate_text)
+                    emb_score = max(0.0, cosine_similarity(query_emb, cand_emb))
+                except Exception:  # noqa: BLE001
+                    emb_score = 0.0
+
+            # Weighted blend (keyword shortlist ensures we don't embed the entire corpus).
+            score = float(min(1.0, (0.65 * kw_score) + (0.35 * emb_score)))
             snippets.append(
                 RegulationSnippet(
                     regulation_code=r.regulation_code,
