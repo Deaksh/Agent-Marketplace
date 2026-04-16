@@ -140,6 +140,14 @@ async def seed_regulations(session: AsyncSession = Depends(get_session)):
     return await seed_regulation_units(session=session)
 
 
+@app.get("/regulations/seed")
+async def seed_regulations_get(session: AsyncSession = Depends(get_session)):
+    """
+    Browser-friendly alias for seeding (GET), since clicking a link can't issue POST.
+    """
+    return await seed_regulation_units(session=session)
+
+
 @app.get("/agents")
 async def list_agents(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(AgentRow).order_by(AgentRow.name))).scalars().all()
