@@ -50,7 +50,8 @@ class RegulationRetriever:
         tokens = [t for t in (raw.replace("/", " ").replace("-", " ").split()) if len(t) >= 4]
         tokens = tokens[:6]  # cap for perf
 
-        base = select(RegulationUnit).where(RegulationUnit.regulation_code == regulation_code)
+        base_all = select(RegulationUnit).where(RegulationUnit.regulation_code == regulation_code)
+        base = base_all
         if tokens:
             base = base.where(or_(*[RegulationUnit.text.ilike(f"%{t}%") for t in tokens]))
         else:
@@ -102,8 +103,9 @@ class RegulationRetriever:
         # Fallback: if nothing matched, just return some units so downstream can still produce an answer,
         # but with lower confidence.
         if not snippets:
+            # IMPORTANT: don't reuse the keyword-filtered query, otherwise fallback still returns nothing.
             rows2 = (
-                (await self._session.execute(base.limit(limit)))
+                (await self._session.execute(base_all.limit(limit)))
                 .scalars()
                 .all()
             )
