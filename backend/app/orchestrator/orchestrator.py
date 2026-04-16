@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, stop_after_attempt, wait_exponential_jitter
 
 from app.agents.registry import AgentRegistry
-from app.db.models import Execution, ExecutionStep, Outcome
+from app.db.models import AuditLog, Execution, ExecutionStep, Outcome
 
 
 def _now() -> datetime:
@@ -39,11 +39,30 @@ class Orchestrator:
         """
         MVP planner:
         - Always run intent_parser first
-        - Then retrieve regs + map obligations + score risk + generate report
+        - Then choose a workflow-specific set of steps
         - Designed so we can swap for LLM function-calling planner later
         """
-        return [
-            PlanStep("intent_parser", 0),
+        workflow_hint = (context.get("workflow") or "").strip().lower()
+        if workflow_hint:
+            state["workflow_hint"] = workflow_hint
+
+        # Always parse intent first to set state["workflow"]/["regulation_code"]/signals.
+        base: list[PlanStep] = [PlanStep("intent_parser", 0)]
+
+        # Decide workflow after intent_parser has executed (state may not exist yet here),
+        # so default to a safe, general plan; intent_parser can refine downstream behavior.
+        # The executor will still run all steps listed for the chosen plan.
+        # If the caller explicitly requests a workflow, honor it.
+        workflow = workflow_hint or "auto"
+
+        if workflow in {"regulation_lookup"}:
+            return base + [PlanStep("regulation_retriever", 1), PlanStep("report_generator", 2)]
+
+        if workflow in {"risk_scoring", "risk_scoring_only"}:
+            return base + [PlanStep("obligation_mapper", 1), PlanStep("risk_scorer", 2), PlanStep("report_generator", 3)]
+
+        # Default / auto: full compliance check.
+        return base + [
             PlanStep("regulation_retriever", 1),
             PlanStep("obligation_mapper", 2),
             PlanStep("risk_scorer", 3),
@@ -59,6 +78,16 @@ class Orchestrator:
         audit_trail: list[dict[str, Any]] = []
 
         plan = await self.plan(intent=execution.intent, context=execution.context, state=state)
+
+        self._session.add(
+            AuditLog(
+                execution_id=execution.id,
+                event_type="execution.started",
+                message="Execution started",
+                payload={"workflow": execution.workflow, "intent": execution.intent, "context": execution.context},
+            )
+        )
+        await self._session.commit()
 
         # Create step rows upfront for auditability.
         steps = []
@@ -106,6 +135,14 @@ class Orchestrator:
             execution.status = "succeeded"
             execution.completed_at = _now()
             await self._session.merge(execution)
+            self._session.add(
+                AuditLog(
+                    execution_id=execution.id,
+                    event_type="execution.succeeded",
+                    message="Execution succeeded",
+                    payload={"confidence": confidence},
+                )
+            )
             await self._session.commit()
             return outcome
         except Exception as e:  # noqa: BLE001
@@ -113,6 +150,14 @@ class Orchestrator:
             execution.completed_at = _now()
             execution.error = str(e)
             await self._session.merge(execution)
+            self._session.add(
+                AuditLog(
+                    execution_id=execution.id,
+                    event_type="execution.failed",
+                    message="Execution failed",
+                    payload={"error": str(e)},
+                )
+            )
             await self._session.commit()
             raise
 
@@ -138,6 +183,20 @@ class Orchestrator:
             "state_keys": sorted(list(state.keys())),
         }
         await self._session.merge(step_row)
+        self._session.add(
+            AuditLog(
+                execution_id=execution.id,
+                step_id=step_row.id,
+                event_type="step.started",
+                message=f"Step started: {step_row.agent_name}",
+                payload={
+                    "step_index": step_row.step_index,
+                    "agent": step_row.agent_name,
+                    "attempts": step_row.attempts,
+                    "input": step_row.input,
+                },
+            )
+        )
         await self._session.commit()
 
         try:
@@ -151,6 +210,20 @@ class Orchestrator:
             step_row.completed_at = _now()
             step_row.output = output or {}
             await self._session.merge(step_row)
+            self._session.add(
+                AuditLog(
+                    execution_id=execution.id,
+                    step_id=step_row.id,
+                    event_type="step.succeeded",
+                    message=f"Step succeeded: {step_row.agent_name}",
+                    payload={
+                        "step_index": step_row.step_index,
+                        "agent": step_row.agent_name,
+                        "attempts": step_row.attempts,
+                        "output": step_row.output,
+                    },
+                )
+            )
             await self._session.commit()
 
             audit.append(
@@ -170,6 +243,20 @@ class Orchestrator:
             step_row.completed_at = _now()
             step_row.error = str(e)
             await self._session.merge(step_row)
+            self._session.add(
+                AuditLog(
+                    execution_id=execution.id,
+                    step_id=step_row.id,
+                    event_type="step.failed",
+                    message=f"Step failed: {step_row.agent_name}",
+                    payload={
+                        "step_index": step_row.step_index,
+                        "agent": step_row.agent_name,
+                        "attempts": step_row.attempts,
+                        "error": str(e),
+                    },
+                )
+            )
             await self._session.commit()
             audit.append(
                 {

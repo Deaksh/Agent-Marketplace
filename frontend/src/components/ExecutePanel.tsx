@@ -14,13 +14,46 @@ type ExecFull = {
   explainability?: unknown | null;
 };
 
+type StepRow = {
+  id: string;
+  step_index: number;
+  agent_name: string;
+  status: string;
+  attempts: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  error?: string | null;
+};
+
+type StepsResp = { execution_id: string; steps: StepRow[] };
+
+type AuditEvent = {
+  id: string;
+  step_id?: string | null;
+  event_type: string;
+  message: string;
+  payload: unknown;
+  created_at?: string | null;
+};
+type AuditResp = { execution_id: string; events: AuditEvent[] };
+
 export function ExecutePanel() {
   const [pending, setPending] = useState(false);
   const [lastExecutionId, setLastExecutionId] = useState<string>("");
   const [result, setResult] = useState<ExecFull | null>(null);
+  const [steps, setSteps] = useState<StepsResp | null>(null);
+  const [audit, setAudit] = useState<AuditResp | null>(null);
 
   const pollUrl = useMemo(
     () => (lastExecutionId ? `/api/executions/${lastExecutionId}` : ""),
+    [lastExecutionId]
+  );
+  const stepsUrl = useMemo(
+    () => (lastExecutionId ? `/api/executions/${lastExecutionId}/steps` : ""),
+    [lastExecutionId]
+  );
+  const auditUrl = useMemo(
+    () => (lastExecutionId ? `/api/executions/${lastExecutionId}/audit` : ""),
     [lastExecutionId]
   );
 
@@ -45,6 +78,8 @@ export function ExecutePanel() {
 
     setPending(true);
     setResult(null);
+    setSteps(null);
+    setAudit(null);
     try {
       const res = await fetch("/api/execute", {
         method: "POST",
@@ -56,6 +91,18 @@ export function ExecutePanel() {
     } finally {
       setPending(false);
     }
+  }
+
+  async function pollAllOnce() {
+    if (!pollUrl) return;
+    const [r1, r2, r3] = await Promise.all([
+      fetch(pollUrl, { cache: "no-store" }),
+      stepsUrl ? fetch(stepsUrl, { cache: "no-store" }) : Promise.resolve(null),
+      auditUrl ? fetch(auditUrl, { cache: "no-store" }) : Promise.resolve(null),
+    ]);
+    setResult((await r1.json()) as ExecFull);
+    if (r2) setSteps((await r2.json()) as StepsResp);
+    if (r3) setAudit((await r3.json()) as AuditResp);
   }
 
   async function pollOnce() {
@@ -129,6 +176,13 @@ export function ExecutePanel() {
               >
                 Poll once
               </button>
+              <button
+                type="button"
+                onClick={pollAllOnce}
+                className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 hover:bg-zinc-800"
+              >
+                Poll + steps + audit
+              </button>
               <a
                 className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 hover:bg-zinc-800"
                 href={pollUrl}
@@ -141,6 +195,16 @@ export function ExecutePanel() {
             {result ? (
               <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
                 {JSON.stringify(result, null, 2)}
+              </pre>
+            ) : null}
+            {steps ? (
+              <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
+                {JSON.stringify(steps, null, 2)}
+              </pre>
+            ) : null}
+            {audit ? (
+              <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
+                {JSON.stringify(audit, null, 2)}
               </pre>
             ) : null}
           </div>
@@ -161,6 +225,13 @@ export function ExecutePanel() {
           <li>
             GET <code className="text-zinc-100">/api/executions/&lt;execution_id&gt;</code>{" "}
             until status is <code className="text-zinc-100">succeeded</code>.
+          </li>
+          <li>
+            (Optional) GET{" "}
+            <code className="text-zinc-100">/api/executions/&lt;execution_id&gt;/steps</code> for
+            step-by-step progress and{" "}
+            <code className="text-zinc-100">/api/executions/&lt;execution_id&gt;/audit</code> for a
+            durable audit event stream.
           </li>
         </ol>
       </div>

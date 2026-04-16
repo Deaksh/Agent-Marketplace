@@ -16,9 +16,8 @@ Ports (kept consistent with your devcontainer):
 ### Backend (FastAPI)
 
 ```bash
-cd backend
 python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8040 --reload
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8040 --reload --app-dir backend --reload-dir backend
 ```
 
 ### Frontend (Next.js)
@@ -56,6 +55,10 @@ Response (initial):
 
 Poll for result:
 - `GET /executions/{execution_id}`
+
+Execution introspection (progress + durable audit stream):
+- `GET /executions/{execution_id}/steps`
+- `GET /executions/{execution_id}/audit`
 
 ### `GET /agents`
 - lists all available agents (built-ins + registered)

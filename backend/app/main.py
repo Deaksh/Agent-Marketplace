@@ -18,7 +18,7 @@ from app.agents.builtin.risk_scorer import RiskScorerAgent
 from app.agents.registry import AgentRegistry, spec_to_dict
 from app.core.config import settings
 from app.db.models import Agent as AgentRow
-from app.db.models import Execution, Outcome
+from app.db.models import AuditLog, Execution, ExecutionStep, Outcome
 from app.db.session import get_session, init_db
 from app.orchestrator.orchestrator import Orchestrator
 from app.retrieval.regulations import RegulationRetriever
@@ -28,6 +28,7 @@ from app.validator.validator import OutcomeValidator
 class ExecuteRequest(BaseModel):
     intent: str = Field(..., min_length=3)
     context: dict[str, Any] = Field(default_factory=dict)
+    workflow: str | None = None
 
 
 class ExecuteResponse(BaseModel):
@@ -166,7 +167,8 @@ async def _run_execution(*, execution_id: UUID) -> None:
 
 @app.post("/execute", response_model=ExecuteResponse)
 async def execute(req: ExecuteRequest, background: BackgroundTasks, session: AsyncSession = Depends(get_session)):
-    execution = Execution(intent=req.intent, context=req.context, workflow="auto", status="queued")
+    workflow = (req.workflow or req.context.get("workflow") or "auto").strip() if isinstance(req.context, dict) else (req.workflow or "auto")
+    execution = Execution(intent=req.intent, context=req.context, workflow=workflow or "auto", status="queued")
     session.add(execution)
     await session.commit()
     await session.refresh(execution)
@@ -198,4 +200,52 @@ async def get_execution(execution_id: UUID, session: AsyncSession = Depends(get_
         audit_trail=payload.get("audit_trail"),
         explainability=payload.get("explainability"),
     )
+
+
+@app.get("/executions/{execution_id}/steps")
+async def list_execution_steps(execution_id: UUID, session: AsyncSession = Depends(get_session)):
+    rows = (
+        (await session.execute(select(ExecutionStep).where(ExecutionStep.execution_id == execution_id).order_by(ExecutionStep.step_index)))
+        .scalars()
+        .all()
+    )
+    return {
+        "execution_id": str(execution_id),
+        "steps": [
+            {
+                "id": str(r.id),
+                "step_index": r.step_index,
+                "agent_name": r.agent_name,
+                "status": r.status,
+                "attempts": r.attempts,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+                "error": r.error,
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.get("/executions/{execution_id}/audit")
+async def list_execution_audit(execution_id: UUID, session: AsyncSession = Depends(get_session)):
+    rows = (
+        (await session.execute(select(AuditLog).where(AuditLog.execution_id == execution_id).order_by(AuditLog.created_at)))
+        .scalars()
+        .all()
+    )
+    return {
+        "execution_id": str(execution_id),
+        "events": [
+            {
+                "id": str(r.id),
+                "step_id": str(r.step_id) if r.step_id else None,
+                "event_type": r.event_type,
+                "message": r.message,
+                "payload": r.payload,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
 

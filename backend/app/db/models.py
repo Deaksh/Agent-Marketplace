@@ -59,6 +59,27 @@ class ExecutionStep(SQLModel, table=True):
     error: Optional[str] = None
 
 
+class AuditLog(SQLModel, table=True):
+    """
+    Append-only audit event stream.
+
+    This is intentionally denormalized JSON so we can:
+    - record execution + step lifecycle events
+    - keep a durable explainability trail even if agent outputs evolve
+    - support future marketplace provenance (signatures, package hashes, etc.)
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    execution_id: UUID = Field(index=True)
+    step_id: Optional[UUID] = Field(default=None, index=True)
+
+    event_type: str = Field(index=True)  # execution.* | step.* | system.*
+    message: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
+
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+
+
 class Outcome(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     execution_id: UUID = Field(index=True)
