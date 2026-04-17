@@ -185,8 +185,14 @@ export function ExecutePanel() {
     setResult(body);
   }
 
+  const evidenceSnippets = useMemo(() => {
+    const trail = asArray<any>(result?.audit_trail);
+    const rr = trail.find((s) => s?.agent === "regulation_retriever");
+    return asArray<any>(rr?.output?.snippets);
+  }, [result]);
+
   return (
-    <section className="mt-6 grid gap-6 md:grid-cols-2">
+    <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_380px]">
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
         <h2 className="text-lg font-semibold">Create execution</h2>
         <form
@@ -475,43 +481,7 @@ export function ExecutePanel() {
                   </div>
                 ) : null}
 
-                {activeTab === "evidence" ? (
-                  <div className="mt-3 grid gap-2">
-                    {(() => {
-                      // Try to pull snippets out of audit_trail: regulation_retriever step output.snippets
-                      const trail = asArray<any>(result.audit_trail);
-                      const rr = trail.find((s) => s?.agent === "regulation_retriever");
-                      const snippets = asArray<any>(rr?.output?.snippets);
-                      if (!snippets.length) {
-                        return (
-                          <div className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
-                            No evidence snippets were retrieved. If this is a fresh Codespace, re-seed regulations at{" "}
-                            <code className="text-amber-100">/api/regulations/seed</code> and retry.
-                          </div>
-                        );
-                      }
-                      return (
-                        <div className="grid gap-2">
-                          {snippets.map((s: any, idx: number) => (
-                            <div key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="text-sm font-semibold text-zinc-100">
-                                  {s.unit_id} {s.title ? `— ${s.title}` : ""}
-                                </div>
-                                <div className="text-[11px] text-zinc-400">
-                                  score {typeof s.score === "number" ? s.score.toFixed(2) : "—"}
-                                </div>
-                              </div>
-                              {s.text ? (
-                                <div className="mt-2 text-[12px] leading-snug text-zinc-300">{s.text}</div>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                ) : null}
+                {/* Evidence moved to right sidebar */}
 
                 {activeTab === "explainability" ? (
                   <div className="mt-3 grid gap-2">
@@ -591,30 +561,49 @@ export function ExecutePanel() {
         ) : null}
       </div>
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <h2 className="text-lg font-semibold">How to view results</h2>
-        <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-zinc-300">
-          <li>
-            Start backend on <code className="text-zinc-100">:8040</code> and frontend on{" "}
-            <code className="text-zinc-100">:5273</code>.
-          </li>
-          <li>
-            POST to <code className="text-zinc-100">/api/execute</code> to get an{" "}
-            <code className="text-zinc-100">execution_id</code>.
-          </li>
-          <li>
-            GET <code className="text-zinc-100">/api/executions/&lt;execution_id&gt;</code>{" "}
-            until status is <code className="text-zinc-100">succeeded</code>.
-          </li>
-          <li>
-            (Optional) GET{" "}
-            <code className="text-zinc-100">/api/executions/&lt;execution_id&gt;/steps</code> for
-            step-by-step progress and{" "}
-            <code className="text-zinc-100">/api/executions/&lt;execution_id&gt;/audit</code> for a
-            durable audit event stream.
-          </li>
-        </ol>
-      </div>
+      <aside className="lg:sticky lg:top-6 h-fit rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Evidence</h2>
+          <span className="text-xs text-zinc-400">
+            {result ? `${evidenceSnippets.length} snippets` : "—"}
+          </span>
+        </div>
+        <p className="mt-2 text-sm text-zinc-300">
+          Retrieved regulation units used to ground the outcome.
+        </p>
+
+        {!result ? (
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-300">
+            Run an execution to see evidence here.
+          </div>
+        ) : !evidenceSnippets.length ? (
+          <div className="mt-4 rounded-xl border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
+            No evidence snippets were retrieved. If this is a fresh Codespace, seed regulations at{" "}
+            <code className="text-amber-100">/api/regulations/seed</code> and retry.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-2 max-h-[70vh] overflow-auto pr-1">
+            {evidenceSnippets.map((s: any, idx: number) => (
+              <div key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-zinc-100">
+                      {s.unit_id} {s.title ? `— ${s.title}` : ""}
+                    </div>
+                    {s.version ? <div className="text-[11px] text-zinc-500">v{String(s.version)}</div> : null}
+                  </div>
+                  <div className="shrink-0 text-[11px] text-zinc-400">
+                    {typeof s.score === "number" ? s.score.toFixed(2) : "—"}
+                  </div>
+                </div>
+                {s.text ? (
+                  <div className="mt-2 text-[12px] leading-snug text-zinc-300">{s.text}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </aside>
     </section>
   );
 }
