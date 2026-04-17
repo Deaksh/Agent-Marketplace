@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 
+import { MarketplaceEnable } from "@/components/MarketplaceEnable";
+
 type AgentDetailResp = {
   package: {
     id: string;
@@ -55,9 +57,12 @@ export default async function MarketplaceDetailPage({ params }: { params: Promis
             </div>
             {p.description ? <p className="mt-3 text-zinc-300">{p.description}</p> : null}
           </div>
-          <a className="text-sm text-zinc-300 underline" href="/marketplace">
-            Back
-          </a>
+          <div className="flex items-center gap-2">
+            <MarketplaceEnable packageId={p.id} />
+            <a className="text-sm text-zinc-300 underline" href="/marketplace">
+              Back
+            </a>
+          </div>
         </div>
       </div>
 

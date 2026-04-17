@@ -33,8 +33,75 @@ class Agent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now_utc)
 
 
+class Org(SQLModel, table=True):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    created_at: datetime = Field(default_factory=_now_utc)
+
+
+class AgentPackage(SQLModel, table=True):
+    """
+    Stable identity for an agent across versions (marketplace-facing).
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    publisher: str = Field(index=True)  # e.g. org/user handle
+    slug: str = Field(index=True, unique=True)  # stable URL-friendly id
+    name: str
+    description: str = ""
+    categories: list[str] = Field(default_factory=list, sa_column=Column(SQLITE_JSON))
+    tags: list[str] = Field(default_factory=list, sa_column=Column(SQLITE_JSON))
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+
+
+class AgentVersion(SQLModel, table=True):
+    """
+    Immutable (in spirit) version record for a package.
+
+    v1 supports three runtimes:
+    - builtin: maps to a built-in agent name
+    - remote_http: POST JSON to an HTTPS endpoint
+    - llm_prompt: run Groq/OpenAI-compatible prompt returning JSON
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    package_id: UUID = Field(index=True)
+
+    version: str = Field(index=True)  # semver-like string
+    release_notes: str = ""
+
+    runtime: str = Field(index=True)  # builtin|remote_http|llm_prompt
+    builtin_agent_name: str | None = Field(default=None, index=True)
+    endpoint_url: str | None = None
+    prompt_template: str | None = None
+
+    input_schema: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
+    output_schema: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
+    cost_estimate_usd: float = 0.0
+    reliability_score: float = 0.8  # 0..1
+
+    status: str = Field(default="active", index=True)  # active|disabled|deprecated
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+
+    # Minimal marketplace signals (v1)
+    run_count: int = 0
+    success_count: int = 0
+    avg_latency_ms: float = 0.0
+
+
+class OrgAgentEnablement(SQLModel, table=True):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    org_id: UUID = Field(index=True)
+    package_id: UUID = Field(index=True)
+    enabled: bool = True
+    pinned_version_id: UUID | None = Field(default=None, index=True)
+    policy: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+
+
 class Execution(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
+    org_id: UUID | None = Field(default=None, index=True)
     intent: str
     context: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
     workflow: str = "auto"
@@ -49,6 +116,10 @@ class ExecutionStep(SQLModel, table=True):
     execution_id: UUID = Field(index=True)
     step_index: int
     agent_name: str
+    agent_package_id: UUID | None = Field(default=None, index=True)
+    agent_version_id: UUID | None = Field(default=None, index=True)
+    cost_usd_estimated: float | None = None
+    cost_usd_actual: float | None = None
     status: str = "queued"  # queued|running|succeeded|failed|skipped
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

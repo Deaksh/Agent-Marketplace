@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     hf_token: str | None = None
     hf_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
+    # Marketplace guardrails (v1)
+    marketplace_remote_allowlist: list[str] = []  # e.g. ["https://agents.myco.com/"]
+    marketplace_remote_timeout_s: float = 20.0
+    marketplace_max_cost_usd: float = 2.00
+
 
 settings = Settings()
 
