@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 
+import { headers } from "next/headers";
+
 type Package = {
   id: string;
   publisher: string;
@@ -28,8 +30,17 @@ type MarketplaceListResp = {
   agents: { package: Package; latest_version: VersionSummary | null }[];
 };
 
+function getOrigin() {
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  if (!host) throw new Error("Missing host header");
+  return `${proto}://${host}`;
+}
+
 async function fetchAgents(): Promise<MarketplaceListResp> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/marketplace/agents`, {
+  const origin = getOrigin();
+  const res = await fetch(`${origin}/api/marketplace/agents`, {
     cache: "no-store",
   });
   return (await res.json()) as MarketplaceListResp;
