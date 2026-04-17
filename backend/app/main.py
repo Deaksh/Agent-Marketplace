@@ -33,6 +33,7 @@ from app.db.session import get_session, init_db
 from app.orchestrator.orchestrator import Orchestrator
 from app.retrieval.regulations import RegulationRetriever
 from app.validator.validator import OutcomeValidator
+from app.ingestion.seed_marketplace import seed_marketplace_packages
 from app.ingestion.seed_regulations import seed_regulation_units
 from app.personas import personas_to_dict
 
@@ -325,6 +326,18 @@ async def marketplace_get_agent(package_id: UUID, session: AsyncSession = Depend
             for v in versions
         ],
     }
+
+
+@app.post("/marketplace/seed")
+async def marketplace_seed(session: AsyncSession = Depends(get_session)):
+    """Dev/demo: idempotent seed of example marketplace packages (built-in agents as listings)."""
+    return await seed_marketplace_packages(session=session)
+
+
+@app.get("/marketplace/seed")
+async def marketplace_seed_get(session: AsyncSession = Depends(get_session)):
+    """Browser-friendly alias for seeding marketplace demo packages (GET)."""
+    return await seed_marketplace_packages(session=session)
 
 
 @app.post("/marketplace/agents/publish")

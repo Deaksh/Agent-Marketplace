@@ -89,7 +89,18 @@ export default async function MarketplacePage() {
           ))
         ) : (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6 text-zinc-300">
-            No marketplace agents published yet.
+            <p>No marketplace agents are published in the database yet.</p>
+            <p className="mt-3 text-sm text-zinc-400">
+              For a dev demo, open{" "}
+              <a className="text-zinc-200 underline" href="/api/marketplace/seed" target="_blank" rel="noreferrer">
+                /api/marketplace/seed
+              </a>{" "}
+              once (idempotent), then reload this page. To run compliance workflows, use{" "}
+              <a className="text-zinc-200 underline" href="/">
+                Executions
+              </a>
+              .
+            </p>
           </div>
         )}
       </div>
