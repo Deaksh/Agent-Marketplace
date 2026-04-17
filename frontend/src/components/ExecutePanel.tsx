@@ -50,6 +50,22 @@ type PersonaField = {
 type PersonaDef = { key: string; label: string; goal: string; fields: PersonaField[] };
 type PersonasResp = { personas: PersonaDef[] };
 
+type Risk = { key?: string; severity?: string; description?: string; mitigation_hint?: string };
+type Recommendation = { title?: string; why?: string; how?: string };
+type Explainability = { checks?: { check?: string; ok?: boolean; [k: string]: unknown }[]; notes?: string[] };
+
+function asArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+
+function severityColor(sev: string | undefined) {
+  const s = (sev || "").toLowerCase();
+  if (s === "high") return "border-red-900/60 bg-red-950/30 text-red-200";
+  if (s === "medium") return "border-amber-900/60 bg-amber-950/30 text-amber-200";
+  if (s === "low") return "border-emerald-900/60 bg-emerald-950/30 text-emerald-200";
+  return "border-zinc-800 bg-zinc-950 text-zinc-200";
+}
+
 export function ExecutePanel() {
   const [pending, setPending] = useState(false);
   const [lastExecutionId, setLastExecutionId] = useState<string>("");
@@ -58,6 +74,9 @@ export function ExecutePanel() {
   const [audit, setAudit] = useState<AuditResp | null>(null);
   const [personas, setPersonas] = useState<PersonaDef[]>([]);
   const [personaKey, setPersonaKey] = useState<string>("founder_pm");
+  const [activeTab, setActiveTab] = useState<
+    "summary" | "risks" | "recommendations" | "evidence" | "explainability" | "raw"
+  >("summary");
 
   const pollUrl = useMemo(
     () => (lastExecutionId ? `/api/executions/${lastExecutionId}` : ""),
@@ -133,6 +152,7 @@ export function ExecutePanel() {
     setResult(null);
     setSteps(null);
     setAudit(null);
+    setActiveTab("summary");
     try {
       const res = await fetch("/api/execute", {
         method: "POST",
@@ -349,20 +369,223 @@ export function ExecutePanel() {
                 Open JSON
               </a>
             </div>
+
             {result ? (
-              <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
-                {JSON.stringify(result, null, 2)}
-              </pre>
-            ) : null}
-            {steps ? (
-              <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
-                {JSON.stringify(steps, null, 2)}
-              </pre>
-            ) : null}
-            {audit ? (
-              <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
-                {JSON.stringify(audit, null, 2)}
-              </pre>
+              <div className="mt-3">
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      ["summary", "Summary"],
+                      ["risks", "Risks"],
+                      ["recommendations", "Recommendations"],
+                      ["evidence", "Evidence"],
+                      ["explainability", "Explainability"],
+                      ["raw", "Raw"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setActiveTab(k)}
+                      className={
+                        "rounded-lg border px-3 py-1.5 text-xs " +
+                        (activeTab === k
+                          ? "border-indigo-500 bg-indigo-950/40 text-indigo-100"
+                          : "border-zinc-700 bg-zinc-900 hover:bg-zinc-800")
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {activeTab === "summary" ? (
+                  <div className="mt-3 grid gap-3">
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                      <div className="text-[11px] text-zinc-400">Status</div>
+                      <div className="text-sm font-semibold text-zinc-100">{result.status}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                        <div className="text-[11px] text-zinc-400">Confidence</div>
+                        <div className="text-sm font-semibold text-zinc-100">
+                          {typeof result.confidence === "number" ? result.confidence.toFixed(2) : "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                        <div className="text-[11px] text-zinc-400">Execution</div>
+                        <div className="text-sm font-semibold text-zinc-100">{result.execution_id}</div>
+                      </div>
+                    </div>
+                    {result.result ? (
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                        <div className="text-[11px] text-zinc-400">Report</div>
+                        <pre className="mt-2 whitespace-pre-wrap text-[12px] leading-snug text-zinc-200">
+                          {result.result}
+                        </pre>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {activeTab === "risks" ? (
+                  <div className="mt-3 grid gap-2">
+                    {asArray<Risk>(result.risks).length ? (
+                      asArray<Risk>(result.risks).map((r, idx) => (
+                        <div key={idx} className={"rounded-xl border p-3 " + severityColor(r.severity)}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-xs font-semibold">{r.key || "risk"}</div>
+                            <div className="text-[11px] opacity-80">{(r.severity || "unknown").toUpperCase()}</div>
+                          </div>
+                          <div className="mt-1 text-sm">{r.description}</div>
+                          {r.mitigation_hint ? (
+                            <div className="mt-2 text-[12px] text-zinc-300">
+                              <span className="text-zinc-400">Mitigation:</span> {r.mitigation_hint}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-300">
+                        No risks reported.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {activeTab === "recommendations" ? (
+                  <div className="mt-3 grid gap-2">
+                    {asArray<Recommendation>(result.recommendations).length ? (
+                      asArray<Recommendation>(result.recommendations).map((rec, idx) => (
+                        <div key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                          <div className="text-sm font-semibold text-zinc-100">{rec.title || "Recommendation"}</div>
+                          {rec.why ? <div className="mt-1 text-[12px] text-zinc-300">{rec.why}</div> : null}
+                          {rec.how ? (
+                            <div className="mt-2 text-[12px] text-zinc-300">
+                              <span className="text-zinc-400">How:</span> {rec.how}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-300">
+                        No recommendations reported.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {activeTab === "evidence" ? (
+                  <div className="mt-3 grid gap-2">
+                    {(() => {
+                      // Try to pull snippets out of audit_trail: regulation_retriever step output.snippets
+                      const trail = asArray<any>(result.audit_trail);
+                      const rr = trail.find((s) => s?.agent === "regulation_retriever");
+                      const snippets = asArray<any>(rr?.output?.snippets);
+                      if (!snippets.length) {
+                        return (
+                          <div className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-200">
+                            No evidence snippets were retrieved. If this is a fresh Codespace, re-seed regulations at{" "}
+                            <code className="text-amber-100">/api/regulations/seed</code> and retry.
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="grid gap-2">
+                          {snippets.map((s: any, idx: number) => (
+                            <div key={idx} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm font-semibold text-zinc-100">
+                                  {s.unit_id} {s.title ? `— ${s.title}` : ""}
+                                </div>
+                                <div className="text-[11px] text-zinc-400">
+                                  score {typeof s.score === "number" ? s.score.toFixed(2) : "—"}
+                                </div>
+                              </div>
+                              {s.text ? (
+                                <div className="mt-2 text-[12px] leading-snug text-zinc-300">{s.text}</div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : null}
+
+                {activeTab === "explainability" ? (
+                  <div className="mt-3 grid gap-2">
+                    {(() => {
+                      const ex = (result.explainability || {}) as Explainability;
+                      const checks = asArray<Explainability["checks"][number]>(ex.checks);
+                      return (
+                        <div className="grid gap-2">
+                          {checks.length ? (
+                            checks.map((c, idx) => (
+                              <div
+                                key={idx}
+                                className={
+                                  "rounded-xl border p-3 " +
+                                  (c.ok ? "border-emerald-900/60 bg-emerald-950/30" : "border-rose-900/60 bg-rose-950/30")
+                                }
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="text-sm font-semibold text-zinc-100">{c.check || "check"}</div>
+                                  <div className="text-[11px] text-zinc-300">{c.ok ? "OK" : "FAIL"}</div>
+                                </div>
+                                <pre className="mt-2 overflow-auto text-[11px] text-zinc-300">
+                                  {JSON.stringify(c, null, 2)}
+                                </pre>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-300">
+                              No explainability checks reported.
+                            </div>
+                          )}
+                          {asArray<string>(ex.notes).length ? (
+                            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-300">
+                              <div className="text-sm font-semibold text-zinc-100">Notes</div>
+                              <ul className="mt-2 list-disc space-y-1 pl-5">
+                                {asArray<string>(ex.notes).map((n, i) => (
+                                  <li key={i}>{n}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : null}
+
+                {activeTab === "raw" ? (
+                  <div className="mt-3 grid gap-2">
+                    <details className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                      <summary className="cursor-pointer text-sm font-semibold text-zinc-100">Execution JSON</summary>
+                      <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
+                        {JSON.stringify(result, null, 2)}
+                      </pre>
+                    </details>
+                    {steps ? (
+                      <details className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                        <summary className="cursor-pointer text-sm font-semibold text-zinc-100">Steps</summary>
+                        <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
+                          {JSON.stringify(steps, null, 2)}
+                        </pre>
+                      </details>
+                    ) : null}
+                    {audit ? (
+                      <details className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                        <summary className="cursor-pointer text-sm font-semibold text-zinc-100">Audit events</summary>
+                        <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-[11px] leading-snug">
+                          {JSON.stringify(audit, null, 2)}
+                        </pre>
+                      </details>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ) : null}
