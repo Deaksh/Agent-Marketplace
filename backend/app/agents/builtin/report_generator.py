@@ -35,12 +35,26 @@ class ReportGeneratorAgent:
         gaps = state.get("gaps") or []
         risks = state.get("risks") or []
         reg = state.get("regulation_code") or "UNKNOWN"
+        persona = (context.get("persona") or "founder_pm").strip()
 
-        headline = "Likely compliant with gaps to address" if risk_score < 0.45 else "Not enough evidence of compliance; remediation required"
+        # Headline should incorporate evidence/confidence, not only a risk threshold.
+        explainability = state.get("explainability") or {}
+        checks = {c.get("check"): c for c in (explainability.get("checks") or []) if isinstance(c, dict)}
+        evidence_ok = bool((checks.get("evidence_sufficient") or {}).get("ok"))
+        confidence = float(state.get("confidence") or 0.0)
+
+        if not evidence_ok:
+            headline = "Not enough evidence; provide missing inputs / artifacts"
+        elif confidence >= 0.85 and risk_score < 0.55:
+            headline = "Likely compliant with actionable gaps to address"
+        else:
+            headline = "Compliance risk elevated; remediation recommended"
+
         lines = [
             f"Outcome Execution Layer Report ({reg})",
             "",
             f"Intent: {intent}",
+            f"Persona: {persona}",
             f"Assessment headline: {headline}",
             f"Risk score: {risk_score:.2f} (0=low, 1=high)",
             "",
@@ -63,6 +77,41 @@ class ReportGeneratorAgent:
                 lines.append(f"- [{(r.get('severity') or 'unknown').upper()}] {r.get('description')}")
 
         recommendations = []
+
+        # Persona-tailored next actions (always included as the first item).
+        if persona == "founder_pm":
+            recommendations.append(
+                {
+                    "title": "Define ship criteria and assign owners",
+                    "why": "Shipping requires clear gates tied to evidence and controls.",
+                    "how": "Convert top gaps into acceptance criteria; assign owners/dates; link evidence artifacts (DPIA, retention policy, notices).",
+                }
+            )
+        elif persona == "security":
+            recommendations.append(
+                {
+                    "title": "Create a controls evidence pack",
+                    "why": "Security reviews require demonstrable controls and traceability.",
+                    "how": "Document access control, encryption, logging/monitoring, and incident response; map each control to obligations.",
+                }
+            )
+        elif persona == "legal_ops":
+            recommendations.append(
+                {
+                    "title": "Prepare legal artifacts for defensibility",
+                    "why": "Legal conclusions must be supported by lawful basis and documentation.",
+                    "how": "Confirm lawful basis; update notices; ensure DPAs/subprocessor list; maintain RoPA and DPIA where required.",
+                }
+            )
+        elif persona == "sales_eng":
+            recommendations.append(
+                {
+                    "title": "Generate customer questionnaire-ready answers",
+                    "why": "Sales cycles need consistent, evidence-backed responses.",
+                    "how": "Summarize hosting, subprocessors, certifications, retention, DPIA status, and key obligations into reusable answers.",
+                }
+            )
+
         if any(g.get("key") == "data_retention_unspecified" for g in gaps):
             recommendations.append(
                 {

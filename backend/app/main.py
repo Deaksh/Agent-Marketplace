@@ -24,6 +24,7 @@ from app.orchestrator.orchestrator import Orchestrator
 from app.retrieval.regulations import RegulationRetriever
 from app.validator.validator import OutcomeValidator
 from app.ingestion.seed_regulations import seed_regulation_units
+from app.personas import personas_to_dict
 
 
 class ExecuteRequest(BaseModel):
@@ -106,6 +107,11 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/personas")
+async def list_personas():
+    return personas_to_dict()
 
 
 @app.get("/regulations/stats")
