@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +20,9 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5273",
     ]
 
-    database_url: str = "sqlite+aiosqlite:///./oel.db"
+    # Use an absolute default path so the DB doesn't depend on process CWD (common in Codespaces).
+    _default_sqlite_path: Path = Path(__file__).resolve().parents[2] / "oel.db"  # backend/oel.db
+    database_url: str = f"sqlite+aiosqlite:///{_default_sqlite_path.as_posix()}"
 
     # --- LLM providers (optional) ---
     # System remains functional without any LLM key configured.
