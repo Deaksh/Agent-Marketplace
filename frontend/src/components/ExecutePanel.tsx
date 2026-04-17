@@ -1,5 +1,6 @@
 "use client";
 
+import { ensureDefaultOrgId } from "@/lib/defaultOrg";
 import { useMemo, useState } from "react";
 
 type ExecResp = { execution_id: string; status: string };
@@ -165,10 +166,18 @@ export function ExecutePanel() {
     setAudit(null);
     setActiveTab("summary");
     try {
+      let orgId: string | undefined;
+      try {
+        orgId = await ensureDefaultOrgId();
+      } catch {
+        orgId = undefined;
+      }
       const res = await fetch("/api/execute", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ intent, context }),
+        body: JSON.stringify(
+          orgId ? { intent, context, org_id: orgId } : { intent, context },
+        ),
       });
       const body = (await res.json()) as ExecResp;
       const row: ExecRow = {

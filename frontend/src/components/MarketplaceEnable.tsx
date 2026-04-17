@@ -1,18 +1,7 @@
 "use client";
 
+import { ensureDefaultOrgId } from "@/lib/defaultOrg";
 import { useEffect, useState } from "react";
-
-const ORG_STORAGE_KEY = "oel_org_id";
-
-async function ensureDefaultOrg(): Promise<string> {
-  const existing = localStorage.getItem(ORG_STORAGE_KEY);
-  if (existing) return existing;
-  const res = await fetch("/api/orgs?name=default", { method: "POST" });
-  const body = (await res.json()) as { org_id?: string };
-  if (!body.org_id) throw new Error("Failed to create org");
-  localStorage.setItem(ORG_STORAGE_KEY, body.org_id);
-  return body.org_id;
-}
 
 export function MarketplaceEnable({ packageId }: { packageId: string }) {
   const [orgId, setOrgId] = useState<string>("");
@@ -22,7 +11,7 @@ export function MarketplaceEnable({ packageId }: { packageId: string }) {
   useEffect(() => {
     (async () => {
       try {
-        const id = await ensureDefaultOrg();
+        const id = await ensureDefaultOrgId();
         setOrgId(id);
         const res = await fetch(`/api/orgs/${id}/agents`, { cache: "no-store" });
         const body = (await res.json()) as { enabled?: { package_id: string; enabled: boolean }[] };
