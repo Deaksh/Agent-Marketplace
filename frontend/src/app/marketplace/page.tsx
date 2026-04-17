@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import { headers } from "next/headers";
+import { backendBaseUrl } from "@/lib/backend";
+import { readJsonResponse } from "@/lib/readJsonResponse";
 
 type Package = {
   id: string;
@@ -30,20 +31,11 @@ type MarketplaceListResp = {
   agents: { package: Package; latest_version: VersionSummary | null }[];
 };
 
-function getOrigin() {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  if (!host) throw new Error("Missing host header");
-  return `${proto}://${host}`;
-}
-
 async function fetchAgents(): Promise<MarketplaceListResp> {
-  const origin = getOrigin();
-  const res = await fetch(`${origin}/api/marketplace/agents`, {
+  const res = await fetch(`${backendBaseUrl()}/marketplace/agents`, {
     cache: "no-store",
   });
-  return (await res.json()) as MarketplaceListResp;
+  return readJsonResponse<MarketplaceListResp>(res);
 }
 
 export default async function MarketplacePage() {

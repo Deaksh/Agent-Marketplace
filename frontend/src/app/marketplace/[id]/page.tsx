@@ -1,7 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { MarketplaceEnable } from "@/components/MarketplaceEnable";
-import { headers } from "next/headers";
+import { backendBaseUrl } from "@/lib/backend";
+import { readJsonResponse } from "@/lib/readJsonResponse";
 
 type AgentDetailResp = {
   package: {
@@ -35,20 +36,11 @@ type AgentDetailResp = {
   }[];
 };
 
-function getOrigin() {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  if (!host) throw new Error("Missing host header");
-  return `${proto}://${host}`;
-}
-
 async function fetchDetail(id: string): Promise<AgentDetailResp> {
-  const origin = getOrigin();
-  const res = await fetch(`${origin}/api/marketplace/agents/${id}`, {
+  const res = await fetch(`${backendBaseUrl()}/marketplace/agents/${id}`, {
     cache: "no-store",
   });
-  return (await res.json()) as AgentDetailResp;
+  return readJsonResponse<AgentDetailResp>(res);
 }
 
 export default async function MarketplaceDetailPage({ params }: { params: Promise<{ id: string }> }) {
