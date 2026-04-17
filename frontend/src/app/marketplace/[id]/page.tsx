@@ -61,6 +61,9 @@ export default async function MarketplaceDetailPage({ params }: { params: Promis
           </div>
           <div className="flex items-center gap-2">
             <MarketplaceEnable packageId={p.id} />
+            <a className="text-sm text-zinc-300 underline" href="/regulations">
+              Regulations
+            </a>
             <a className="text-sm text-zinc-300 underline" href="/marketplace">
               Back
             </a>

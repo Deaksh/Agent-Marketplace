@@ -45,9 +45,14 @@ export default async function MarketplacePage() {
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Agent Marketplace</h1>
-          <a className="text-sm text-zinc-300 underline" href="/">
-            Back to executions
-          </a>
+          <div className="flex items-center gap-3 text-sm">
+            <a className="text-zinc-300 underline" href="/">
+              Executions
+            </a>
+            <a className="text-zinc-300 underline" href="/regulations">
+              Regulations
+            </a>
+          </div>
         </div>
         <p className="mt-2 text-zinc-300">
           Browse versioned agents with contracts, cost estimates, and reliability signals.

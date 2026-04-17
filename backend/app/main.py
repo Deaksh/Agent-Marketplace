@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.builtin.intent_parser import IntentParserAgent
@@ -172,6 +172,67 @@ async def regulation_stats(session: AsyncSession = Depends(get_session)):
     return {
         "total_units": int(total or 0),
         "by_regulation_code": [{"regulation_code": c, "count": int(n)} for c, n in by_code],
+    }
+
+
+@app.get("/regulations/units")
+async def list_regulation_units(
+    regulation_code: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_session),
+):
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+
+    query = select(RegulationUnit)
+    if regulation_code:
+        query = query.where(RegulationUnit.regulation_code == regulation_code)
+    if q:
+        needle = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                RegulationUnit.unit_id.ilike(needle),
+                RegulationUnit.title.ilike(needle),
+                RegulationUnit.text.ilike(needle),
+            )
+        )
+    query = query.order_by(RegulationUnit.regulation_code.asc(), RegulationUnit.unit_id.asc()).offset(offset).limit(limit)
+    rows = (await session.execute(query)).scalars().all()
+    return {
+        "limit": limit,
+        "offset": offset,
+        "units": [
+            {
+                "id": r.id,
+                "regulation_code": r.regulation_code,
+                "unit_id": r.unit_id,
+                "title": r.title,
+                "version": r.version,
+                "text": r.text,
+                "meta": r.meta,
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.get("/regulations/units/{unit_pk}")
+async def get_regulation_unit(unit_pk: int, session: AsyncSession = Depends(get_session)):
+    row = (await session.execute(select(RegulationUnit).where(RegulationUnit.id == unit_pk))).scalars().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Regulation unit not found")
+    return {
+        "unit": {
+            "id": row.id,
+            "regulation_code": row.regulation_code,
+            "unit_id": row.unit_id,
+            "title": row.title,
+            "version": row.version,
+            "text": row.text,
+            "meta": row.meta,
+        }
     }
 
 
