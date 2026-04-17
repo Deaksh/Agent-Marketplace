@@ -559,6 +559,24 @@ async def list_execution_steps(execution_id: UUID, session: AsyncSession = Depen
         .scalars()
         .all()
     )
+    pkg_ids = {r.agent_package_id for r in rows if r.agent_package_id}
+    ver_ids = {r.agent_version_id for r in rows if r.agent_version_id}
+    packages = (
+        (await session.execute(select(AgentPackage).where(AgentPackage.id.in_(pkg_ids))))  # type: ignore[arg-type]
+        .scalars()
+        .all()
+        if pkg_ids
+        else []
+    )
+    versions = (
+        (await session.execute(select(AgentVersion).where(AgentVersion.id.in_(ver_ids))))  # type: ignore[arg-type]
+        .scalars()
+        .all()
+        if ver_ids
+        else []
+    )
+    pkg_by_id = {p.id: p for p in packages}
+    ver_by_id = {v.id: v for v in versions}
     return {
         "execution_id": str(execution_id),
         "steps": [
@@ -571,6 +589,28 @@ async def list_execution_steps(execution_id: UUID, session: AsyncSession = Depen
                 "started_at": r.started_at.isoformat() if r.started_at else None,
                 "completed_at": r.completed_at.isoformat() if r.completed_at else None,
                 "error": r.error,
+                "agent_package_id": str(r.agent_package_id) if r.agent_package_id else None,
+                "agent_version_id": str(r.agent_version_id) if r.agent_version_id else None,
+                "agent_package": (
+                    {
+                        "id": str(pkg_by_id[r.agent_package_id].id),
+                        "publisher": pkg_by_id[r.agent_package_id].publisher,
+                        "slug": pkg_by_id[r.agent_package_id].slug,
+                        "name": pkg_by_id[r.agent_package_id].name,
+                    }
+                    if r.agent_package_id and r.agent_package_id in pkg_by_id
+                    else None
+                ),
+                "agent_version": (
+                    {
+                        "id": str(ver_by_id[r.agent_version_id].id),
+                        "version": ver_by_id[r.agent_version_id].version,
+                        "runtime": ver_by_id[r.agent_version_id].runtime,
+                        "builtin_agent_name": ver_by_id[r.agent_version_id].builtin_agent_name,
+                    }
+                    if r.agent_version_id and r.agent_version_id in ver_by_id
+                    else None
+                ),
             }
             for r in rows
         ],

@@ -19,6 +19,10 @@ type StepRow = {
   id: string;
   step_index: number;
   agent_name: string;
+  agent_package_id?: string | null;
+  agent_version_id?: string | null;
+  agent_package?: { id: string; publisher: string; slug: string; name: string } | null;
+  agent_version?: { id: string; version: string; runtime: string; builtin_agent_name?: string | null } | null;
   status: string;
   attempts: number;
   started_at?: string | null;
@@ -75,7 +79,7 @@ export function ExecutePanel() {
   const [personas, setPersonas] = useState<PersonaDef[]>([]);
   const [personaKey, setPersonaKey] = useState<string>("founder_pm");
   const [activeTab, setActiveTab] = useState<
-    "summary" | "risks" | "recommendations" | "evidence" | "explainability" | "raw"
+    "summary" | "risks" | "recommendations" | "evidence" | "steps" | "audit" | "explainability" | "raw"
   >("summary");
 
   type ExecRow = {
@@ -483,6 +487,8 @@ export function ExecutePanel() {
                     ["risks", "Risks"],
                     ["recommendations", "Recommendations"],
                     ["evidence", "Evidence"],
+                    ["steps", "Steps"],
+                    ["audit", "Audit"],
                     ["explainability", "Explainability"],
                     ["raw", "Raw"],
                   ] as const
@@ -616,6 +622,79 @@ export function ExecutePanel() {
                               ) : null}
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {activeTab === "steps" ? (
+                    <div className="grid gap-2">
+                      {!steps ? (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-sm text-zinc-300">
+                          Poll + steps + audit to load step details.
+                        </div>
+                      ) : steps.steps.length ? (
+                        steps.steps.map((s) => (
+                          <div key={s.id} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-zinc-100">
+                                  #{s.step_index} · {s.agent_name}
+                                </div>
+                                {s.agent_package && s.agent_version ? (
+                                  <div className="mt-1 text-[12px] text-zinc-400">
+                                    Marketplace: {s.agent_package.publisher} ·{" "}
+                                    <span className="font-mono">{s.agent_package.slug}</span> · v{s.agent_version.version} ·{" "}
+                                    {s.agent_version.runtime}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="shrink-0 text-right text-[11px] text-zinc-400">
+                                <div className="text-zinc-200">{s.status}</div>
+                                <div>attempts {s.attempts}</div>
+                              </div>
+                            </div>
+                            {s.error ? <div className="mt-2 text-[12px] text-red-200">{s.error}</div> : null}
+                            <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-zinc-400">
+                              {s.started_at ? <span>start {s.started_at}</span> : null}
+                              {s.completed_at ? <span>end {s.completed_at}</span> : null}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-sm text-zinc-300">
+                          No steps yet.
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {activeTab === "audit" ? (
+                    <div className="grid gap-2">
+                      {!audit ? (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-sm text-zinc-300">
+                          Poll + steps + audit to load audit events.
+                        </div>
+                      ) : audit.events.length ? (
+                        audit.events.map((ev) => (
+                          <div key={ev.id} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-zinc-100">{ev.event_type}</div>
+                                {ev.message ? <div className="mt-1 text-sm text-zinc-200">{ev.message}</div> : null}
+                                {ev.step_id ? (
+                                  <div className="mt-1 text-[11px] text-zinc-400">
+                                    step_id <span className="font-mono">{ev.step_id}</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="shrink-0 text-[11px] text-zinc-400">{ev.created_at || ""}</div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-sm text-zinc-300">
+                          No audit events yet.
                         </div>
                       )}
                     </div>
