@@ -205,8 +205,12 @@ class RegulationUnit(SQLModel, table=True):
     __tablename__ = "regulation_units"
 
     id: int | None = Field(default=None, primary_key=True)
-    regulation_code: str = Field(index=True)  # e.g. "GDPR"
-    unit_id: str = Field(index=True)  # e.g. "Art. 5"
+    # Stable framework identity (GDPR, EU_AI_ACT, SOC2, ISO27001, etc.)
+    regulation_code: str = Field(index=True)  # kept name for backwards compatibility
+    framework_code: str | None = Field(default=None, index=True)
+
+    # Citation identifiers within the framework (article/control)
+    unit_id: str = Field(index=True)  # e.g. "Art. 5", "CC7.2", "A.5.1"
     title: str = ""
     text: str
     version: str = "unknown"

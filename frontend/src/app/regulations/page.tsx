@@ -6,6 +6,7 @@ import { readJsonResponse } from "@/lib/readJsonResponse";
 type RegulationUnit = {
   id: number;
   regulation_code: string;
+  framework_code?: string | null;
   unit_id: string;
   title: string;
   version: string;
@@ -17,9 +18,11 @@ type UnitsResp = { limit: number; offset: number; units: RegulationUnit[] };
 async function fetchUnits(searchParams: Record<string, string | string[] | undefined>): Promise<UnitsResp> {
   const q = typeof searchParams.q === "string" ? searchParams.q : "";
   const regulationCode = typeof searchParams.regulation_code === "string" ? searchParams.regulation_code : "";
+  const frameworkCode = typeof searchParams.framework_code === "string" ? searchParams.framework_code : "";
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (regulationCode) params.set("regulation_code", regulationCode);
+  if (frameworkCode) params.set("framework_code", frameworkCode);
   params.set("limit", "50");
   params.set("offset", "0");
 
@@ -35,6 +38,7 @@ export default async function RegulationsPage({
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q : "";
   const regulationCode = typeof sp.regulation_code === "string" ? sp.regulation_code : "";
+  const frameworkCode = typeof sp.framework_code === "string" ? sp.framework_code : "";
   const data = await fetchUnits(sp);
 
   return (
@@ -60,7 +64,7 @@ export default async function RegulationsPage({
       </div>
 
       <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/35 p-5 ring-1 ring-white/5">
-        <form className="grid gap-3 md:grid-cols-3" action="/regulations" method="get">
+        <form className="grid gap-3 md:grid-cols-4" action="/regulations" method="get">
           <label className="grid gap-1">
             <span className="text-xs text-slate-300/80">Regulation code</span>
             <input
@@ -69,6 +73,20 @@ export default async function RegulationsPage({
               placeholder="GDPR"
               className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
             />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs text-slate-300/80">Framework</span>
+            <select
+              name="framework_code"
+              defaultValue={frameworkCode}
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
+            >
+              <option value="">Any</option>
+              <option value="GDPR">GDPR</option>
+              <option value="EU_AI_ACT">EU AI Act</option>
+              <option value="SOC2">SOC 2</option>
+              <option value="ISO27001">ISO 27001</option>
+            </select>
           </label>
           <label className="grid gap-1 md:col-span-2">
             <span className="text-xs text-slate-300/80">Search</span>
@@ -79,7 +97,7 @@ export default async function RegulationsPage({
               className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
             />
           </label>
-          <div className="flex items-end justify-between gap-3 md:col-span-3">
+          <div className="flex items-end justify-between gap-3 md:col-span-4">
             <div className="text-xs text-slate-400">
               Showing <span className="text-slate-100">{data.units.length}</span> units
             </div>

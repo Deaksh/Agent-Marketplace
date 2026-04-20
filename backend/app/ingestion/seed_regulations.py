@@ -11,7 +11,14 @@ from app.db.models import RegulationUnit
 from app.retrieval.embedder import ConfigurableEmbedder
 
 
-SEED_PATH = Path(__file__).resolve().parent.parent / "data" / "gdpr_seed_units.json"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+SEED_PATH = DATA_DIR / "gdpr_seed_units.json"
+SEED_PATHS = [
+    DATA_DIR / "gdpr_seed_units.json",
+    DATA_DIR / "eu_ai_act_seed_units.json",
+    DATA_DIR / "soc2_seed_units.json",
+    DATA_DIR / "iso27001_seed_units.json",
+]
 
 
 async def seed_regulation_units(*, session: AsyncSession) -> dict[str, Any]:
@@ -20,7 +27,13 @@ async def seed_regulation_units(*, session: AsyncSession) -> dict[str, Any]:
 
     If your real ingestion pipelines populate `regulation_units`, you should NOT use this.
     """
-    raw = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    raw: list[dict[str, Any]] = []
+    sources: list[str] = []
+    for p in SEED_PATHS:
+        if not p.exists():
+            continue
+        sources.append(str(p))
+        raw.extend(json.loads(p.read_text(encoding="utf-8")))
     inserted = 0
     updated = 0
     embedded = 0
@@ -28,7 +41,8 @@ async def seed_regulation_units(*, session: AsyncSession) -> dict[str, Any]:
     embedder = ConfigurableEmbedder()
 
     for u in raw:
-        code = u["regulation_code"]
+        code = u.get("regulation_code") or "UNKNOWN"
+        framework_code = u.get("framework_code") or code
         unit_id = u["unit_id"]
         meta = u.get("meta", {}) or {}
 
@@ -44,7 +58,14 @@ async def seed_regulation_units(*, session: AsyncSession) -> dict[str, Any]:
             except Exception:  # noqa: BLE001
                 emb = None
         existing = (
-            (await session.execute(select(RegulationUnit).where(RegulationUnit.regulation_code == code).where(RegulationUnit.unit_id == unit_id)))
+            (
+                await session.execute(
+                    select(RegulationUnit)
+                    .where(RegulationUnit.regulation_code == code)
+                    .where(RegulationUnit.framework_code == framework_code)
+                    .where(RegulationUnit.unit_id == unit_id)
+                )
+            )
             .scalars()
             .first()
         )
@@ -53,6 +74,7 @@ async def seed_regulation_units(*, session: AsyncSession) -> dict[str, Any]:
             existing.text = u.get("text", existing.text)
             existing.version = u.get("version", existing.version)
             existing.meta = meta
+            existing.framework_code = framework_code
             existing.source_url = source_url
             existing.jurisdiction = jurisdiction
             if emb:
@@ -64,6 +86,7 @@ async def seed_regulation_units(*, session: AsyncSession) -> dict[str, Any]:
             session.add(
                 RegulationUnit(
                     regulation_code=code,
+                    framework_code=framework_code,
                     unit_id=unit_id,
                     title=u.get("title", ""),
                     text=u.get("text", ""),
@@ -79,5 +102,5 @@ async def seed_regulation_units(*, session: AsyncSession) -> dict[str, Any]:
                 embedded += 1
 
     await session.commit()
-    return {"inserted": inserted, "updated": updated, "embedded": embedded, "source": str(SEED_PATH)}
+    return {"inserted": inserted, "updated": updated, "embedded": embedded, "sources": sources}
 

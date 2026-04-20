@@ -1,0 +1,43 @@
+[
+  {
+    "regulation_code": "ISO27001",
+    "framework_code": "ISO27001",
+    "unit_id": "A.5.1",
+    "title": "Policies for information security",
+    "text": "Information security policy and topic-specific policies should be defined, approved by management, published, and communicated to relevant parties.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "GLOBAL",
+      "source_doc_id": "ISO27001-AnnexA",
+      "citation": { "type": "control", "id": "A.5.1" },
+      "note": "Seed summary snippet for demo; replace with licensed authoritative text where permitted."
+    }
+  },
+  {
+    "regulation_code": "ISO27001",
+    "framework_code": "ISO27001",
+    "unit_id": "A.8.2",
+    "title": "Information classification",
+    "text": "Information should be classified in terms of legal requirements, value, criticality and sensitivity to unauthorized disclosure or modification.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "GLOBAL",
+      "source_doc_id": "ISO27001-AnnexA",
+      "citation": { "type": "control", "id": "A.8.2" }
+    }
+  },
+  {
+    "regulation_code": "ISO27001",
+    "framework_code": "ISO27001",
+    "unit_id": "A.8.12",
+    "title": "Data leakage prevention",
+    "text": "Appropriate measures should be implemented to prevent data leakage from systems, networks and other devices that process, store or transmit information.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "GLOBAL",
+      "source_doc_id": "ISO27001-AnnexA",
+      "citation": { "type": "control", "id": "A.8.12" }
+    }
+  }
+]
+

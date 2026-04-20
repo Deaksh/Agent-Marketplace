@@ -78,8 +78,33 @@ class IntentParserAgent:
                 pass
 
         text = (intent or "").lower()
-        workflow = "gdpr_compliance_check" if ("gdpr" in text or context.get("region") in {"EU", "EEA"}) else "regulation_lookup"
-        regulation_code = "GDPR" if ("gdpr" in text or context.get("region") in {"EU", "EEA"}) else "UNKNOWN"
+
+        # Multi-framework routing (heuristic fallback).
+        framework_code = None
+        regulation_code = None
+        if any(k in text for k in ["ai act", "eu ai", "high-risk ai", "high risk ai", "ai system classification"]):
+            framework_code = "EU_AI_ACT"
+            regulation_code = "EU_AI_ACT"
+        elif any(k in text for k in ["soc2", "soc 2", "aicpa", "trust services criteria"]):
+            framework_code = "SOC2"
+            regulation_code = "SOC2"
+        elif any(k in text for k in ["iso27001", "iso 27001", "isms", "annex a"]):
+            framework_code = "ISO27001"
+            regulation_code = "ISO27001"
+        elif ("gdpr" in text or context.get("region") in {"EU", "EEA"}):
+            framework_code = "GDPR"
+            regulation_code = "GDPR"
+        else:
+            framework_code = (context.get("framework_code") or context.get("regulation_code") or "GDPR")
+            regulation_code = (context.get("regulation_code") or "GDPR")
+
+        # Workflow selection (still uses existing planner workflows for now).
+        workflow = context.get("workflow") or "auto"
+        if workflow == "auto":
+            if framework_code in {"SOC2", "ISO27001"}:
+                workflow = "risk_scoring"
+            else:
+                workflow = "gdpr_compliance_check" if framework_code == "GDPR" else "regulation_lookup"
 
         # Very lightweight extraction; designed to be replaced with LLM function-calls.
         system_type = "unknown"
@@ -96,11 +121,13 @@ class IntentParserAgent:
         }
         state["workflow"] = workflow
         state["regulation_code"] = regulation_code
+        state["framework_code"] = framework_code
         state["system_type"] = system_type
         state["signals"] = signals
         return {
             "workflow": workflow,
             "regulation_code": regulation_code,
+            "framework_code": framework_code,
             "system_type": system_type,
             "signals": signals,
         }

@@ -1,0 +1,96 @@
+[
+  {
+    "regulation_code": "EU_AI_ACT",
+    "framework_code": "EU_AI_ACT",
+    "unit_id": "Art. 5",
+    "title": "Prohibited AI practices",
+    "text": "Certain AI practices are prohibited, including those that deploy subliminal techniques to materially distort behavior, exploit vulnerabilities of specific groups, or enable social scoring by public authorities, subject to the Regulation's detailed conditions and exceptions.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "EU",
+      "source_url": "https://eur-lex.europa.eu/",
+      "citation": { "type": "article", "id": "Art. 5" },
+      "note": "Seed summary snippet for demo; replace with authoritative text ingestion."
+    }
+  },
+  {
+    "regulation_code": "EU_AI_ACT",
+    "framework_code": "EU_AI_ACT",
+    "unit_id": "Art. 6",
+    "title": "High-risk AI systems classification",
+    "text": "High-risk AI systems include those that are intended to be used as safety components of products covered by EU harmonisation legislation, and certain standalone systems in listed areas (e.g., employment, education), subject to the Regulation's scope and exclusions.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "EU",
+      "source_url": "https://eur-lex.europa.eu/",
+      "citation": { "type": "article", "id": "Art. 6" },
+      "note": "Seed summary snippet for demo; replace with authoritative text ingestion."
+    }
+  },
+  {
+    "regulation_code": "EU_AI_ACT",
+    "framework_code": "EU_AI_ACT",
+    "unit_id": "Art. 9",
+    "title": "Risk management system",
+    "text": "Providers of high-risk AI systems must establish, implement, document and maintain a risk management system as a continuous iterative process throughout the AI system lifecycle.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "EU",
+      "source_url": "https://eur-lex.europa.eu/",
+      "citation": { "type": "article", "id": "Art. 9" }
+    }
+  },
+  {
+    "regulation_code": "EU_AI_ACT",
+    "framework_code": "EU_AI_ACT",
+    "unit_id": "Art. 10",
+    "title": "Data and data governance",
+    "text": "Training, validation and testing data sets shall be relevant, representative, free of errors as far as possible, and complete, with appropriate data governance and management practices to examine and mitigate possible biases.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "EU",
+      "source_url": "https://eur-lex.europa.eu/",
+      "citation": { "type": "article", "id": "Art. 10" }
+    }
+  },
+  {
+    "regulation_code": "EU_AI_ACT",
+    "framework_code": "EU_AI_ACT",
+    "unit_id": "Art. 11",
+    "title": "Technical documentation",
+    "text": "Providers shall draw up technical documentation before placing a high-risk AI system on the market or putting it into service, demonstrating compliance with applicable requirements.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "EU",
+      "source_url": "https://eur-lex.europa.eu/",
+      "citation": { "type": "article", "id": "Art. 11" }
+    }
+  },
+  {
+    "regulation_code": "EU_AI_ACT",
+    "framework_code": "EU_AI_ACT",
+    "unit_id": "Art. 13",
+    "title": "Transparency and provision of information",
+    "text": "High-risk AI systems shall be designed and developed to ensure their operation is sufficiently transparent to enable users to interpret the system's output and use it appropriately.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "EU",
+      "source_url": "https://eur-lex.europa.eu/",
+      "citation": { "type": "article", "id": "Art. 13" }
+    }
+  },
+  {
+    "regulation_code": "EU_AI_ACT",
+    "framework_code": "EU_AI_ACT",
+    "unit_id": "Art. 14",
+    "title": "Human oversight",
+    "text": "High-risk AI systems shall be designed and developed with appropriate human-machine interface tools to enable effective human oversight and to prevent or minimise risks.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "EU",
+      "source_url": "https://eur-lex.europa.eu/",
+      "citation": { "type": "article", "id": "Art. 14" }
+    }
+  }
+]
+

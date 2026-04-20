@@ -34,6 +34,7 @@ class RegulationRetrieverAgent:
 
     async def run(self, *, intent: str, context: dict, state: dict) -> dict:
         regulation_code = state.get("regulation_code") or context.get("regulation_code") or "GDPR"
+        framework_code = state.get("framework_code") or context.get("framework_code") or None
         query = context.get("query") or intent
         jurisdiction = context.get("jurisdiction") or context.get("region")
         effective_at = None
@@ -45,6 +46,7 @@ class RegulationRetrieverAgent:
 
         snippets = await self._retriever.search(
             regulation_code=regulation_code,
+            framework_code=framework_code if isinstance(framework_code, str) else None,
             query=query,
             jurisdiction=jurisdiction if isinstance(jurisdiction, str) else None,
             effective_at=effective_at,

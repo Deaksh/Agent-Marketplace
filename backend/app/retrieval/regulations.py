@@ -45,6 +45,7 @@ class RegulationRetriever:
         self,
         *,
         regulation_code: str,
+        framework_code: str | None = None,
         query: str,
         jurisdiction: str | None = None,
         effective_at: datetime | None = None,
@@ -54,6 +55,7 @@ class RegulationRetriever:
         if settings.database_url.startswith("postgres"):
             return await self._search_pgvector(
                 regulation_code=regulation_code,
+                framework_code=framework_code,
                 query=query,
                 jurisdiction=jurisdiction,
                 effective_at=effective_at,
@@ -66,6 +68,8 @@ class RegulationRetriever:
         tokens = tokens[:6]  # cap for perf
 
         base_all = select(RegulationUnit).where(RegulationUnit.regulation_code == regulation_code)
+        if framework_code:
+            base_all = base_all.where(RegulationUnit.framework_code == framework_code)
 
         # 1) Keyword shortlist (best-effort). If it yields nothing, fall back to a regulation-code-only shortlist.
         if tokens:
@@ -131,6 +135,7 @@ class RegulationRetriever:
         self,
         *,
         regulation_code: str,
+        framework_code: str | None,
         query: str,
         jurisdiction: str | None,
         effective_at: datetime | None,
@@ -159,6 +164,8 @@ class RegulationRetriever:
             RegulationUnit,
             score_expr.label("score"),
         ).where(RegulationUnit.regulation_code == regulation_code)
+        if framework_code:
+            q = q.where(RegulationUnit.framework_code == framework_code)
         q = q.where(RegulationUnit.embedding.is_not(None))  # avoid null-vector rows
 
         if jurisdiction:

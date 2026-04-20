@@ -16,8 +16,9 @@ export default function CasesPage() {
   const [sess, setSess] = useState<{ accessToken: string; orgId: string } | null>(null);
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [pending, setPending] = useState(false);
-  const [title, setTitle] = useState("GDPR compliance review — Hiring tool");
-  const [description, setDescription] = useState("Assess GDPR compliance before deployment. Collect evidence, cite regs, produce decision.");
+  const [title, setTitle] = useState("EU AI Act compliance review — Hiring tool");
+  const [description, setDescription] = useState("Assess compliance before deployment. Collect evidence, cite regulations/controls, produce a decision.");
+  const [template, setTemplate] = useState<"EU_AI_ACT" | "GDPR" | "SOC2" | "ISO27001">("EU_AI_ACT");
 
   const headers = useMemo(() => {
     const h: Record<string, string> = {};
@@ -82,6 +83,26 @@ export default function CasesPage() {
 
       <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/35 p-5 ring-1 ring-white/5">
         <div className="grid gap-3">
+          <label className="grid gap-1">
+            <span className="text-xs text-slate-300/80">Template</span>
+            <select
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
+              value={template}
+              onChange={(e) => {
+                const v = e.target.value as any;
+                setTemplate(v);
+                if (v === "EU_AI_ACT") setTitle("EU AI Act compliance review — Hiring tool");
+                if (v === "GDPR") setTitle("GDPR compliance review — Hiring tool");
+                if (v === "SOC2") setTitle("SOC 2 readiness review — Core platform");
+                if (v === "ISO27001") setTitle("ISO 27001 controls review — ISMS scope");
+              }}
+            >
+              <option value="EU_AI_ACT">EU AI Act</option>
+              <option value="GDPR">GDPR</option>
+              <option value="SOC2">SOC 2</option>
+              <option value="ISO27001">ISO 27001</option>
+            </select>
+          </label>
           <label className="grid gap-1">
             <span className="text-xs text-slate-300/80">Title</span>
             <input

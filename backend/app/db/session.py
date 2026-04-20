@@ -66,6 +66,8 @@ async def init_db() -> None:
             cols = (await conn.execute(text("PRAGMA table_info(regulation_units)"))).all()
             existing = {c[1] for c in cols}  # type: ignore[index]
             alters = []
+            if "framework_code" not in existing:
+                alters.append("ALTER TABLE regulation_units ADD COLUMN framework_code VARCHAR")
             if "jurisdiction" not in existing:
                 alters.append("ALTER TABLE regulation_units ADD COLUMN jurisdiction VARCHAR")
             if "effective_from" not in existing:

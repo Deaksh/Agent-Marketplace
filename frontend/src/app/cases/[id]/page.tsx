@@ -38,6 +38,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const [active, setActive] = useState<Tab>("summary");
   const [pending, setPending] = useState(false);
   const [workflow, setWorkflow] = useState("auto");
+  const [framework, setFramework] = useState("EU_AI_ACT");
   const [intent, setIntent] = useState("Check if my AI hiring tool is GDPR compliant");
 
   const headers = useMemo(() => {
@@ -82,7 +83,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/cases/${id}/execute`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify({ intent, workflow, context: { workflow } }),
+        body: JSON.stringify({ intent, workflow, context: { workflow, framework_code: framework, regulation_code: framework } }),
       });
       await res.json();
       await load();
@@ -128,7 +129,20 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/35 p-5 ring-1 ring-white/5">
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-4">
+          <label className="grid gap-1">
+            <span className="text-xs text-slate-300/80">Framework</span>
+            <select
+              value={framework}
+              onChange={(e) => setFramework(e.target.value)}
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="EU_AI_ACT">EU AI Act</option>
+              <option value="GDPR">GDPR</option>
+              <option value="SOC2">SOC 2</option>
+              <option value="ISO27001">ISO 27001</option>
+            </select>
+          </label>
           <label className="grid gap-1">
             <span className="text-xs text-slate-300/80">Workflow</span>
             <select
@@ -149,7 +163,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
               className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
             />
           </label>
-          <div className="md:col-span-3 flex justify-end">
+          <div className="md:col-span-4 flex justify-end">
             <button
               type="button"
               disabled={pending || !sess}

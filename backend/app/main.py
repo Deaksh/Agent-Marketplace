@@ -603,6 +603,7 @@ async def regulation_stats(session: AsyncSession = Depends(get_session)):
 @app.get("/regulations/units")
 async def list_regulation_units(
     regulation_code: str | None = None,
+    framework_code: str | None = None,
     q: str | None = None,
     jurisdiction: str | None = None,
     effective_at: str | None = None,
@@ -616,6 +617,8 @@ async def list_regulation_units(
     query = select(RegulationUnit)
     if regulation_code:
         query = query.where(RegulationUnit.regulation_code == regulation_code)
+    if framework_code:
+        query = query.where(RegulationUnit.framework_code == framework_code)
     if jurisdiction:
         query = query.where(RegulationUnit.jurisdiction == jurisdiction)
     if effective_at:
@@ -645,6 +648,7 @@ async def list_regulation_units(
             {
                 "id": r.id,
                 "regulation_code": r.regulation_code,
+                "framework_code": r.framework_code,
                 "unit_id": r.unit_id,
                 "title": r.title,
                 "version": r.version,

@@ -1,0 +1,43 @@
+[
+  {
+    "regulation_code": "SOC2",
+    "framework_code": "SOC2",
+    "unit_id": "CC1.1",
+    "title": "Control Environment",
+    "text": "The entity demonstrates a commitment to integrity and ethical values, establishing standards of conduct and expectations for personnel and third parties.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "GLOBAL",
+      "source_doc_id": "AICPA-TSC",
+      "citation": { "type": "control", "id": "CC1.1" },
+      "note": "Seed summary snippet for demo; replace with licensed authoritative text where permitted."
+    }
+  },
+  {
+    "regulation_code": "SOC2",
+    "framework_code": "SOC2",
+    "unit_id": "CC6.1",
+    "title": "Logical and Physical Access Controls",
+    "text": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "GLOBAL",
+      "source_doc_id": "AICPA-TSC",
+      "citation": { "type": "control", "id": "CC6.1" }
+    }
+  },
+  {
+    "regulation_code": "SOC2",
+    "framework_code": "SOC2",
+    "unit_id": "CC7.2",
+    "title": "Security Incident Detection and Monitoring",
+    "text": "The entity monitors system components and the operation of controls to detect anomalies and security events, and evaluates and responds to identified issues.",
+    "version": "seed-2026",
+    "meta": {
+      "jurisdiction": "GLOBAL",
+      "source_doc_id": "AICPA-TSC",
+      "citation": { "type": "control", "id": "CC7.2" }
+    }
+  }
+]
+

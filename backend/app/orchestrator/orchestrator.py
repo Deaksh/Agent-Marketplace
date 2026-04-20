@@ -75,13 +75,19 @@ class Orchestrator:
         if workflow in {"risk_scoring", "risk_scoring_only"}:
             return base + [PlanStep("obligation_mapper", 1), PlanStep("risk_scorer", 2), PlanStep("report_generator", 3)]
 
-        # Default / auto: full compliance check.
-        plan = base + [
-            PlanStep("regulation_retriever", 1),
-            PlanStep("obligation_mapper", 2),
-            PlanStep("risk_scorer", 3),
-            PlanStep("report_generator", 4),
-        ]
+        # Default / auto:
+        # - For GDPR we keep the full pipeline.
+        # - For other frameworks we still retrieve evidence, then run risk+report (obligation mapper is GDPR-specific today).
+        framework = (state.get("framework_code") or context.get("framework_code") or state.get("regulation_code") or "").strip().upper()
+        if framework and framework != "GDPR":
+            plan = base + [PlanStep("regulation_retriever", 1), PlanStep("risk_scorer", 2), PlanStep("report_generator", 3)]
+        else:
+            plan = base + [
+                PlanStep("regulation_retriever", 1),
+                PlanStep("obligation_mapper", 2),
+                PlanStep("risk_scorer", 3),
+                PlanStep("report_generator", 4),
+            ]
         # Insert enabled marketplace agents (parallel) after obligation mapping.
         marketplace_steps = await self._marketplace_plan_steps(context=context)
         if marketplace_steps:
