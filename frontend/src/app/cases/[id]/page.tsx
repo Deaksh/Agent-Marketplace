@@ -28,6 +28,30 @@ type ExecResp = {
   explainability?: any | null;
 };
 
+type StepRow = {
+  id: string;
+  step_index: number;
+  agent_name: string;
+  status: string;
+  attempts: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  error?: string | null;
+  agent_package?: { publisher: string; slug: string; name: string } | null;
+  agent_version?: { version: string; runtime: string } | null;
+};
+type StepsResp = { execution_id: string; steps: StepRow[] };
+
+type AuditEvent = {
+  id: string;
+  step_id?: string | null;
+  event_type: string;
+  message: string;
+  created_at?: string | null;
+  payload?: any;
+};
+type AuditResp = { execution_id: string; events: AuditEvent[] };
+
 const tabs = ["summary", "decision", "risks", "actions", "evidence", "steps", "audit"] as const;
 type Tab = (typeof tabs)[number];
 
@@ -35,6 +59,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const [sess, setSess] = useState<{ accessToken: string; orgId: string } | null>(null);
   const [caseData, setCaseData] = useState<CaseResp | null>(null);
   const [execs, setExecs] = useState<ExecResp[]>([]);
+  const [steps, setSteps] = useState<StepsResp | null>(null);
+  const [audit, setAudit] = useState<AuditResp | null>(null);
   const [active, setActive] = useState<Tab>("summary");
   const [pending, setPending] = useState(false);
   const [workflow, setWorkflow] = useState("auto");
@@ -74,6 +100,24 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   }, [sess?.orgId]);
 
   const latest = execs[0] || null;
+
+  useEffect(() => {
+    (async () => {
+      if (!latest?.execution_id) return;
+      try {
+        const s = await fetch(`/api/executions/${latest.execution_id}/steps`, { cache: "no-store" });
+        setSteps((await s.json()) as StepsResp);
+      } catch {
+        setSteps(null);
+      }
+      try {
+        const a = await fetch(`/api/executions/${latest.execution_id}/audit`, { cache: "no-store" });
+        setAudit((await a.json()) as AuditResp);
+      } catch {
+        setAudit(null);
+      }
+    })();
+  }, [latest?.execution_id]);
 
   async function runExecution() {
     const { id } = await params;
@@ -248,13 +292,62 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             ))}
           </div>
         ) : active === "steps" ? (
-          <pre className="max-h-96 overflow-auto text-[11px] text-slate-100/90">
-            {JSON.stringify(latest.audit_trail || [], null, 2)}
-          </pre>
+          <div className="grid gap-2">
+            {steps?.steps?.length ? (
+              steps.steps.map((s) => (
+                <div key={s.id} className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-sm text-slate-200">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-100">
+                        {s.step_index}. {s.agent_name}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-300/80">
+                        status <span className="text-slate-100">{s.status}</span> · attempts{" "}
+                        <span className="text-slate-100">{s.attempts}</span>
+                        {s.started_at ? ` · start ${s.started_at}` : ""}
+                        {s.completed_at ? ` · end ${s.completed_at}` : ""}
+                      </div>
+                      {s.agent_package ? (
+                        <div className="mt-2 text-xs text-slate-300/80">
+                          agent package: <span className="text-slate-100">{s.agent_package.publisher}</span> /{" "}
+                          <span className="text-slate-100">{s.agent_package.slug}</span>
+                          {s.agent_version ? (
+                            <>
+                              {" "}
+                              · v<span className="text-slate-100">{s.agent_version.version}</span> ·{" "}
+                              <span className="text-slate-100">{s.agent_version.runtime}</span>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {s.error ? <div className="mt-2 text-xs text-rose-200">Error: {s.error}</div> : null}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-slate-200">No steps loaded yet.</div>
+            )}
+          </div>
         ) : (
-          <pre className="max-h-96 overflow-auto text-[11px] text-slate-100/90">
-            {JSON.stringify(latest.explainability || {}, null, 2)}
-          </pre>
+          <div className="grid gap-2">
+            {audit?.events?.length ? (
+              audit.events.map((e) => (
+                <div key={e.id} className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-sm text-slate-200">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-300/80">{e.created_at || ""}</div>
+                      <div className="mt-1 font-semibold text-slate-100">{e.event_type}</div>
+                      {e.message ? <div className="mt-1 text-sm text-slate-200/90">{e.message}</div> : null}
+                      {e.step_id ? <div className="mt-1 text-xs text-slate-300/80">step_id {e.step_id}</div> : null}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-slate-200">No audit events loaded yet.</div>
+            )}
+          </div>
         )}
       </div>
     </main>

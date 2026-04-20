@@ -47,6 +47,7 @@ from app.retrieval.regulations import RegulationRetriever
 from app.validator.validator import OutcomeValidator
 from app.ingestion.seed_marketplace import seed_marketplace_packages
 from app.ingestion.seed_regulations import seed_regulation_units
+from app.ingestion.eurlex_ai_act import ingest_eu_ai_act_from_eurlex
 from app.personas import personas_to_dict
 from app.export.case_export import build_case_export, render_case_export_pdf
 from app.observability.logging import configure_logging
@@ -699,6 +700,14 @@ async def seed_regulations_get(session: AsyncSession = Depends(get_session)):
     Browser-friendly alias for seeding (GET), since clicking a link can't issue POST.
     """
     return await seed_regulation_units(session=session)
+
+
+@app.post("/regulations/ingest/eu_ai_act")
+async def ingest_eu_ai_act(url: str | None = None, session: AsyncSession = Depends(get_session)):
+    """
+    Authoritative ingestion (best-effort) from EUR-Lex ELI URL.
+    """
+    return await ingest_eu_ai_act_from_eurlex(session=session, url=(url or None) or "https://eur-lex.europa.eu/eli/reg/2024/1689/oj")
 
 
 @app.get("/agents")
