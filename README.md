@@ -29,6 +29,18 @@ curl -X POST http://127.0.0.1:8040/regulations/seed
 curl http://127.0.0.1:8040/regulations/stats
 ```
 
+### Semantic embeddings (Hugging Face)
+
+Copy `.env.example` to `.env` at the **repository root** (or `backend/.env`), set `HF_TOKEN`, and restart the API. The server does **not** read `.env.example` at runtime.
+
+After the token is active, refresh stored vectors:
+
+```bash
+curl -X POST "http://127.0.0.1:8040/regulations/ingest/reembed"
+# Optional: limit to one framework
+curl -X POST "http://127.0.0.1:8040/regulations/ingest/reembed?framework_code=GDPR"
+```
+
 ### Frontend (Next.js)
 
 ```bash

@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { backendBaseUrl } from "@/lib/backend";
 import { readJsonResponse } from "@/lib/readJsonResponse";
 import { ControlPackUploader } from "@/components/ControlPackUploader";
+import { RegulationReembedPanel } from "@/components/RegulationReembedPanel";
 
 type RegulationUnit = {
   id: number;
@@ -112,8 +113,9 @@ export default async function RegulationsPage({
         </form>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <ControlPackUploader />
+        <RegulationReembedPanel />
       </div>
 
       <div className="mt-6 grid gap-3">

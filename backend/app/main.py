@@ -11,7 +11,7 @@ from uuid import uuid5
 from uuid import NAMESPACE_URL
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Response, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
@@ -49,6 +49,7 @@ from app.ingestion.seed_marketplace import seed_marketplace_packages
 from app.ingestion.seed_regulations import seed_regulation_units
 from app.ingestion.eurlex_ai_act import ingest_eu_ai_act_from_eurlex
 from app.ingestion.control_pack import ControlPackUnit, ingest_control_pack
+from app.ingestion.reembed import reembed_all_regulation_units
 from app.personas import personas_to_dict
 from app.export.case_export import build_case_export, render_case_export_pdf
 from app.observability.logging import configure_logging
@@ -753,6 +754,25 @@ async def ingest_control_pack_endpoint(req: ControlPackIngestRequest, session: A
     out = await ingest_control_pack(session=session, units=units, publisher=req.publisher)
     out["framework_code"] = framework
     return out
+
+
+@app.post("/regulations/ingest/reembed")
+async def reembed_regulations(
+    framework_code: str | None = Query(default=None, description="If set, only rows with this framework_code."),
+    limit: int | None = Query(
+        default=None,
+        ge=1,
+        le=50_000,
+        description="Optional cap on rows processed (ordered by id).",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Recompute embeddings for regulation units (e.g. after setting `HF_TOKEN`).
+
+    Loads `.env` from `backend/.env` or the repo-root `.env` (not `.env.example`).
+    """
+    return await reembed_all_regulation_units(session=session, framework_code=framework_code, limit=limit)
 
 
 @app.get("/agents")
