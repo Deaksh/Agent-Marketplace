@@ -8,5 +8,6 @@ oel.db
 # macOS
 .DS_Store
 
-# Local environment (never commit secrets)
+# Local secrets — keep out of git (copy from `.env.example`). Do not `git add .env`.
 .env
+.env.local
