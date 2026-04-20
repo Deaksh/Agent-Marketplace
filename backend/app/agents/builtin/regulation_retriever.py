@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.agents.base import AgentSpec
 from app.retrieval.regulations import RegulationRetriever
 
@@ -33,7 +35,21 @@ class RegulationRetrieverAgent:
     async def run(self, *, intent: str, context: dict, state: dict) -> dict:
         regulation_code = state.get("regulation_code") or context.get("regulation_code") or "GDPR"
         query = context.get("query") or intent
-        snippets = await self._retriever.search(regulation_code=regulation_code, query=query, limit=8)
+        jurisdiction = context.get("jurisdiction") or context.get("region")
+        effective_at = None
+        if isinstance(context.get("effective_at"), str):
+            try:
+                effective_at = datetime.fromisoformat(context["effective_at"])
+            except Exception:  # noqa: BLE001
+                effective_at = None
+
+        snippets = await self._retriever.search(
+            regulation_code=regulation_code,
+            query=query,
+            jurisdiction=jurisdiction if isinstance(jurisdiction, str) else None,
+            effective_at=effective_at,
+            limit=8,
+        )
         out = {
             "snippets": [
                 {

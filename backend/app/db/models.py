@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import Column
 from sqlalchemy.dialects.sqlite import JSON as SQLITE_JSON
 from sqlmodel import Field, SQLModel
+from pgvector.sqlalchemy import Vector
 
 
 def _now_utc() -> datetime:
@@ -37,6 +38,21 @@ class Org(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(index=True, unique=True)
     created_at: datetime = Field(default_factory=_now_utc)
+
+
+class User(SQLModel, table=True):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    password_hash: str
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+
+
+class Membership(SQLModel, table=True):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(index=True)
+    org_id: UUID = Field(index=True)
+    role: str = Field(default="viewer", index=True)  # admin|reviewer|viewer
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
 
 
 class AgentPackage(SQLModel, table=True):
@@ -81,6 +97,7 @@ class AgentVersion(SQLModel, table=True):
     reliability_score: float = 0.8  # 0..1
 
     status: str = Field(default="active", index=True)  # active|disabled|deprecated
+    cert_status: str = Field(default="DRAFT", index=True)  # DRAFT|VERIFIED|DEPRECATED
     created_at: datetime = Field(default_factory=_now_utc, index=True)
 
     # Minimal marketplace signals (v1)
@@ -99,14 +116,32 @@ class OrgAgentEnablement(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now_utc, index=True)
 
 
+class OrgPolicy(SQLModel, table=True):
+    """
+    Enterprise org-level policy controls for marketplace execution.
+
+    - If `allowed_packages` is non-empty, only those packages may run.
+    - Any package in `blocked_packages` is always denied.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    org_id: UUID = Field(index=True, unique=True)
+    allowed_packages: list[str] = Field(default_factory=list, sa_column=Column(SQLITE_JSON))
+    blocked_packages: list[str] = Field(default_factory=list, sa_column=Column(SQLITE_JSON))
+    updated_at: datetime = Field(default_factory=_now_utc, index=True)
+
+
 class Execution(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     org_id: UUID | None = Field(default=None, index=True)
+    case_id: UUID | None = Field(default=None, index=True)
+    idempotency_key: str | None = Field(default=None, index=True)
     intent: str
     context: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
     workflow: str = "auto"
     status: str = "queued"  # queued|running|succeeded|failed
     created_at: datetime = Field(default_factory=_now_utc)
+    started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
 
@@ -120,7 +155,7 @@ class ExecutionStep(SQLModel, table=True):
     agent_version_id: UUID | None = Field(default=None, index=True)
     cost_usd_estimated: float | None = None
     cost_usd_actual: float | None = None
-    status: str = "queued"  # queued|running|succeeded|failed|skipped
+    status: str = "PENDING"  # PENDING|RUNNING|SUCCESS|FAILED|RETRIED
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     attempts: int = 0
@@ -176,4 +211,39 @@ class RegulationUnit(SQLModel, table=True):
     text: str
     version: str = "unknown"
     meta: dict[str, Any] = Field(default_factory=dict, sa_column=Column("meta", SQLITE_JSON))
+
+    # Enterprise retrieval fields (Phase 1): keep nullable for incremental backfill.
+    jurisdiction: str | None = Field(default=None, index=True)
+    effective_from: datetime | None = Field(default=None, index=True)
+    effective_to: datetime | None = Field(default=None, index=True)
+    source_url: str | None = None
+    source_doc_id: str | None = Field(default=None, index=True)
+
+    # Embedding storage (pgvector in Postgres; JSON in SQLite so dev can still run without Postgres).
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(Vector(384).with_variant(SQLITE_JSON, "sqlite"), nullable=True),
+    )
+
+
+class ComplianceCase(SQLModel, table=True):
+    """
+    Enterprise case/workflow layer.
+
+    A case groups executions and produces an explicit final decision.
+    """
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    org_id: UUID | None = Field(default=None, index=True)
+    owner_id: str | None = Field(default=None, index=True)
+
+    title: str = Field(index=True)
+    description: str = ""
+
+    status: str = Field(default="DRAFT", index=True)  # DRAFT|IN_REVIEW|APPROVED|REJECTED
+    final_decision: dict[str, Any] | None = Field(default=None, sa_column=Column(SQLITE_JSON))
+
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+    updated_at: datetime = Field(default_factory=_now_utc, index=True)
+    finalized_at: datetime | None = Field(default=None, index=True)
 

@@ -1,0 +1,249 @@
+"use client";
+
+import { ensureDemoSession } from "@/lib/authSession";
+import { useEffect, useMemo, useState } from "react";
+
+type CaseResp = {
+  case_id: string;
+  title: string;
+  description: string;
+  status: string;
+  final_decision?: any;
+  linked_executions: string[];
+};
+
+type ExecResp = {
+  execution_id: string;
+  status: string;
+  decision?: string | null;
+  severity?: string | null;
+  blocking_issues?: any[] | null;
+  required_actions?: any[] | null;
+  citations?: any[] | null;
+  result?: string | null;
+  confidence?: number | null;
+  risks?: any[] | null;
+  recommendations?: any[] | null;
+  audit_trail?: any[] | null;
+  explainability?: any | null;
+};
+
+const tabs = ["summary", "decision", "risks", "actions", "evidence", "steps", "audit"] as const;
+type Tab = (typeof tabs)[number];
+
+export default function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const [sess, setSess] = useState<{ accessToken: string; orgId: string } | null>(null);
+  const [caseData, setCaseData] = useState<CaseResp | null>(null);
+  const [execs, setExecs] = useState<ExecResp[]>([]);
+  const [active, setActive] = useState<Tab>("summary");
+  const [pending, setPending] = useState(false);
+  const [workflow, setWorkflow] = useState("auto");
+  const [intent, setIntent] = useState("Check if my AI hiring tool is GDPR compliant");
+
+  const headers = useMemo(() => {
+    const h: Record<string, string> = {};
+    if (!sess) return h;
+    h["Authorization"] = `Bearer ${sess.accessToken}`;
+    h["X-Org-Id"] = sess.orgId;
+    return h;
+  }, [sess]);
+
+  useEffect(() => {
+    (async () => setSess(await ensureDemoSession()))();
+  }, []);
+
+  async function load() {
+    const { id } = await params;
+    if (!sess) return;
+    const res = await fetch(`/api/cases/${id}`, { headers, cache: "no-store" });
+    const body = (await res.json()) as CaseResp;
+    setCaseData(body);
+    const ids = body.linked_executions || [];
+    const full: ExecResp[] = [];
+    for (const eid of ids.slice(0, 10)) {
+      const r = await fetch(`/api/executions/${eid}`, { cache: "no-store" });
+      full.push((await r.json()) as ExecResp);
+    }
+    setExecs(full);
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sess?.orgId]);
+
+  const latest = execs[0] || null;
+
+  async function runExecution() {
+    const { id } = await params;
+    if (!sess) return;
+    setPending(true);
+    try {
+      const res = await fetch(`/api/cases/${id}/execute`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify({ intent, workflow, context: { workflow } }),
+      });
+      await res.json();
+      await load();
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function exportPdf() {
+    const { id } = await params;
+    if (!sess) return;
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8040"}/cases/${id}/export?format=pdf`, {
+      headers,
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+  }
+
+  return (
+    <main className="mx-auto max-w-5xl p-6">
+      <div className="rounded-2xl border border-slate-800/80 bg-gradient-to-r from-fuchsia-500/10 via-indigo-500/10 to-cyan-500/10 p-6 ring-1 ring-white/5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold">{caseData?.title || "Case"}</h1>
+            <div className="mt-1 text-sm text-slate-300/80">status {caseData?.status || "—"}</div>
+            {caseData?.description ? <div className="mt-2 text-sm text-slate-200/90">{caseData.description}</div> : null}
+          </div>
+          <div className="flex items-center gap-2">
+            <a className="text-sm text-slate-200 underline decoration-cyan-400/50 hover:text-white" href="/cases">
+              Back
+            </a>
+            <button
+              type="button"
+              onClick={exportPdf}
+              disabled={!sess}
+              className="rounded-xl border border-slate-700/80 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 hover:bg-slate-900/80 disabled:opacity-60"
+            >
+              Export PDF
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/35 p-5 ring-1 ring-white/5">
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="text-xs text-slate-300/80">Workflow</span>
+            <select
+              value={workflow}
+              onChange={(e) => setWorkflow(e.target.value)}
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="auto">Auto</option>
+              <option value="regulation_lookup">Regulation lookup</option>
+              <option value="risk_scoring">Risk scoring</option>
+            </select>
+          </label>
+          <label className="grid gap-1 md:col-span-2">
+            <span className="text-xs text-slate-300/80">Intent</span>
+            <input
+              value={intent}
+              onChange={(e) => setIntent(e.target.value)}
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
+            />
+          </label>
+          <div className="md:col-span-3 flex justify-end">
+            <button
+              type="button"
+              disabled={pending || !sess}
+              onClick={runExecution}
+              className="rounded-xl bg-gradient-to-r from-indigo-600 via-cyan-600 to-fuchsia-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-900/20 hover:from-indigo-500 hover:via-cyan-500 hover:to-fuchsia-500 disabled:opacity-60"
+            >
+              {pending ? "Running…" : "Run execution"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-2">
+        {tabs.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setActive(t)}
+            className={
+              "rounded-lg border px-3 py-1.5 text-xs " +
+              (active === t
+                ? "border-indigo-400/60 bg-indigo-500/10 text-indigo-100"
+                : "border-slate-700/80 bg-slate-900/60 text-slate-100 hover:bg-slate-900/80")
+            }
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-800/80 bg-slate-900/35 p-5 ring-1 ring-white/5">
+        {!latest ? (
+          <div className="text-slate-200">No executions yet.</div>
+        ) : active === "summary" ? (
+          <div className="grid gap-3">
+            <div className="text-sm text-slate-200">
+              Latest execution: <span className="font-mono text-slate-100">{latest.execution_id}</span> ·{" "}
+              <span className="text-slate-100">{latest.status}</span>
+            </div>
+            {latest.result ? <pre className="whitespace-pre-wrap text-[12px] text-slate-100/90">{latest.result}</pre> : null}
+          </div>
+        ) : active === "decision" ? (
+          <div className="grid gap-2 text-sm text-slate-200">
+            <div>
+              Decision: <span className="text-slate-50 font-semibold">{latest.decision || "—"}</span>
+            </div>
+            <div>
+              Severity: <span className="text-slate-50 font-semibold">{latest.severity || "—"}</span>
+            </div>
+            <div>
+              Confidence: <span className="text-slate-50 font-semibold">{typeof latest.confidence === "number" ? latest.confidence.toFixed(2) : "—"}</span>
+            </div>
+          </div>
+        ) : active === "risks" ? (
+          <div className="grid gap-2">
+            {(latest.risks || []).map((r, idx) => (
+              <div key={idx} className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-sm text-slate-200">
+                <div className="font-semibold text-slate-100">{r.description || r.key || "risk"}</div>
+                {r.severity ? <div className="mt-1 text-xs text-slate-300/80">severity {r.severity}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : active === "actions" ? (
+          <div className="grid gap-2">
+            {(latest.required_actions || []).map((a, idx) => (
+              <div key={idx} className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-sm text-slate-200">
+                <div className="font-semibold text-slate-100">{a.title || "action"}</div>
+                {a.why ? <div className="mt-1 text-xs text-slate-300/80">{a.why}</div> : null}
+                {a.how ? <div className="mt-2 text-xs text-slate-200/90">How: {a.how}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : active === "evidence" ? (
+          <div className="grid gap-2">
+            {(latest.citations || []).map((c, idx) => (
+              <div key={idx} className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-3 text-sm text-slate-200">
+                <div className="font-semibold text-slate-100">
+                  {c.regulation_code} {c.unit_id} {c.title ? `— ${c.title}` : ""}
+                </div>
+                {c.snippet ? <div className="mt-2 text-xs text-slate-200/90">{String(c.snippet)}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : active === "steps" ? (
+          <pre className="max-h-96 overflow-auto text-[11px] text-slate-100/90">
+            {JSON.stringify(latest.audit_trail || [], null, 2)}
+          </pre>
+        ) : (
+          <pre className="max-h-96 overflow-auto text-[11px] text-slate-100/90">
+            {JSON.stringify(latest.explainability || {}, null, 2)}
+          </pre>
+        )}
+      </div>
+    </main>
+  );
+}
+

@@ -40,11 +40,23 @@ class Settings(BaseSettings):
     # Hugging Face (for embedding rerank in retrieval)
     hf_token: str | None = None
     hf_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    rag_embedding_dim: int = 384
 
     # Marketplace guardrails (v1)
     marketplace_remote_allowlist: list[str] = []  # e.g. ["https://agents.myco.com/"]
     marketplace_remote_timeout_s: float = 20.0
     marketplace_max_cost_usd: float = 2.00
+
+    # Orchestrator hardening (Phase 2)
+    agent_timeout_s_default: float = 30.0
+    agent_retry_attempts: int = 3
+    agent_retry_backoff_initial_s: float = 0.5
+    agent_retry_backoff_max_s: float = 6.0
+
+    # Auth (Phase 5)
+    jwt_secret: str = "dev-insecure-secret"
+    jwt_issuer: str = "oel"
+    jwt_exp_minutes: int = 60 * 24
 
 
 settings = Settings()

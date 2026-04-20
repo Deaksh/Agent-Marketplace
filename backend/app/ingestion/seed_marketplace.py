@@ -96,6 +96,7 @@ async def seed_marketplace_packages(*, session: AsyncSession) -> dict[str, Any]:
             cost_estimate_usd=float(row.get("cost_estimate_usd") or 0.0),
             reliability_score=float(row.get("reliability_score") or 0.8),
             status="active",
+            cert_status="VERIFIED",
         )
         session.add(ver)
         await session.commit()

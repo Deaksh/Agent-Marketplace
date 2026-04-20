@@ -1,6 +1,6 @@
 "use client";
 
-import { ensureDefaultOrgId } from "@/lib/defaultOrg";
+import { ensureDemoSession } from "@/lib/authSession";
 import { useMemo, useState } from "react";
 
 type ExecResp = { execution_id: string; status: string };
@@ -68,7 +68,7 @@ function severityColor(sev: string | undefined) {
   if (s === "high") return "border-red-900/60 bg-red-950/30 text-red-200";
   if (s === "medium") return "border-amber-900/60 bg-amber-950/30 text-amber-200";
   if (s === "low") return "border-emerald-900/60 bg-emerald-950/30 text-emerald-200";
-  return "border-zinc-800 bg-zinc-950 text-zinc-200";
+  return "border-slate-800/80 bg-slate-950/60 text-slate-200";
 }
 
 export function ExecutePanel() {
@@ -172,7 +172,7 @@ export function ExecutePanel() {
     try {
       let orgId: string | undefined;
       try {
-        orgId = await ensureDefaultOrgId();
+        orgId = (await ensureDemoSession()).orgId;
       } catch {
         orgId = undefined;
       }
@@ -248,7 +248,7 @@ export function ExecutePanel() {
 
   return (
     <section className="mt-6 grid gap-6">
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <div className="rounded-2xl border border-slate-800/80 bg-slate-900/35 p-6 ring-1 ring-white/5">
         <h2 className="text-lg font-semibold">Create execution</h2>
         <form
           onSubmit={onSubmit}
@@ -258,11 +258,11 @@ export function ExecutePanel() {
           className="mt-4 grid gap-3"
         >
           <label className="grid gap-1 text-sm">
-            <span className="text-zinc-300">Persona</span>
+            <span className="text-slate-200">Persona</span>
             <select
               value={personaKey}
               onChange={(e) => setPersonaKey(e.target.value)}
-              className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
             >
               {(personas.length ? personas : [{ key: "founder_pm", label: "Founder / PM", goal: "", fields: [] }]).map(
                 (p) => (
@@ -273,53 +273,53 @@ export function ExecutePanel() {
               )}
             </select>
             {activePersona ? (
-              <span className="text-xs text-zinc-500">{activePersona.goal}</span>
+              <span className="text-xs text-slate-400">{activePersona.goal}</span>
             ) : null}
           </label>
           <label className="grid gap-1 text-sm">
-            <span className="text-zinc-300">Intent</span>
+            <span className="text-slate-200">Intent</span>
             <input
               name="intent"
               defaultValue="Check if my AI hiring tool is GDPR compliant"
-              className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="grid gap-1 text-sm">
-              <span className="text-zinc-300">Region</span>
+              <span className="text-slate-200">Region</span>
               <input
                 name="region"
                 defaultValue="EU"
-                className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
+                className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
               />
             </label>
             <label className="grid gap-1 text-sm">
-              <span className="text-zinc-300">Company</span>
+              <span className="text-slate-200">Company</span>
               <input
                 name="company"
                 placeholder="Acme Inc"
-                className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
+                className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
               />
             </label>
           </div>
           <label className="grid gap-1 text-sm">
-            <span className="text-zinc-300">Data types (comma-separated)</span>
+            <span className="text-slate-200">Data types (comma-separated)</span>
             <input
               name="data_types"
               defaultValue="PII,biometric"
-              className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
             />
           </label>
           <label className="grid gap-1 text-sm">
-            <span className="text-zinc-300">Data retention</span>
+            <span className="text-slate-200">Data retention</span>
             <input
               name="data_retention"
               placeholder="e.g., 12 months"
-              className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none"
+              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
             />
           </label>
-          <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm">
-            <span className="text-zinc-300">DPIA done</span>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm ring-1 ring-white/5">
+            <span className="text-slate-200">DPIA done</span>
             <input name="dpia_done" type="checkbox" className="h-4 w-4" />
           </label>
 
@@ -338,14 +338,14 @@ export function ExecutePanel() {
                 )
                 .map((f) => {
                   const commonClass =
-                    "rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 outline-none";
+                    "rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20";
                   if (f.type === "boolean") {
                     return (
                       <label
                         key={f.key}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm"
+                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm ring-1 ring-white/5"
                       >
-                        <span className="text-zinc-300">{f.label}</span>
+                        <span className="text-slate-200">{f.label}</span>
                         <input name={f.key} type="checkbox" className="h-4 w-4" />
                       </label>
                     );
@@ -353,7 +353,7 @@ export function ExecutePanel() {
                   if (f.type === "enum") {
                     return (
                       <label key={f.key} className="grid gap-1 text-sm">
-                        <span className="text-zinc-300">{f.label}</span>
+                        <span className="text-slate-200">{f.label}</span>
                         <select name={f.key} className={commonClass} defaultValue="">
                           <option value="">Select…</option>
                           {(f.options || []).map((opt) => (
@@ -362,14 +362,14 @@ export function ExecutePanel() {
                             </option>
                           ))}
                         </select>
-                        {f.help ? <span className="text-xs text-zinc-500">{f.help}</span> : null}
+                        {f.help ? <span className="text-xs text-slate-400">{f.help}</span> : null}
                       </label>
                     );
                   }
                   const isText = f.type === "text";
                   return (
                     <label key={f.key} className="grid gap-1 text-sm">
-                      <span className="text-zinc-300">{f.label}</span>
+                      <span className="text-slate-200">{f.label}</span>
                       {isText ? (
                         <textarea
                           name={f.key}
@@ -384,7 +384,7 @@ export function ExecutePanel() {
                           className={commonClass}
                         />
                       )}
-                      {f.help ? <span className="text-xs text-zinc-500">{f.help}</span> : null}
+                      {f.help ? <span className="text-xs text-slate-400">{f.help}</span> : null}
                     </label>
                   );
                 })
@@ -392,34 +392,34 @@ export function ExecutePanel() {
           <button
             type="submit"
             disabled={pending}
-            className="mt-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-2 rounded-xl bg-gradient-to-r from-indigo-600 via-cyan-600 to-fuchsia-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-900/20 hover:from-indigo-500 hover:via-cyan-500 hover:to-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pending ? "Executing..." : "Execute"}
           </button>
         </form>
-        <p className="mt-3 text-xs text-zinc-400">
+        <p className="mt-3 text-xs text-slate-300/80">
           After creating an execution, poll{" "}
-          <code className="text-zinc-200">/api/executions/&lt;id&gt;</code>.
+          <code className="text-slate-100">/api/executions/&lt;id&gt;</code>.
         </p>
         {executions.length ? (
           <div className="mt-6">
-            <h3 className="text-sm font-semibold text-zinc-200">Executions</h3>
-            <div className="mt-3 divide-y divide-zinc-800 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+            <h3 className="text-sm font-semibold text-slate-200">Executions</h3>
+            <div className="mt-3 divide-y divide-slate-800/70 overflow-hidden rounded-xl border border-slate-800/80 bg-slate-950/60 ring-1 ring-white/5">
               {executions.map((row) => (
                 <button
                   key={row.execution_id}
                   type="button"
                   onClick={() => openExecution(row)}
-                  className="w-full px-3 py-2 text-left hover:bg-zinc-900"
+                  className="w-full px-3 py-2 text-left hover:bg-slate-900/60"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-zinc-100">{row.intent}</div>
-                      <div className="mt-0.5 truncate text-[11px] text-zinc-400">
+                      <div className="truncate text-sm font-semibold text-slate-100">{row.intent}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-slate-400">
                         {row.persona} · {row.execution_id}
                       </div>
                     </div>
-                    <div className="shrink-0 text-[11px] text-zinc-300">{row.status || "queued"}</div>
+                    <div className="shrink-0 text-[11px] text-slate-300">{row.status || "queued"}</div>
                   </div>
                 </button>
               ))}
@@ -437,41 +437,41 @@ export function ExecutePanel() {
             className="absolute inset-0 bg-black/60"
             aria-label="Close drawer"
           />
-          <div className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-zinc-800 bg-zinc-950 shadow-2xl">
-            <div className="flex items-center justify-between gap-3 border-b border-zinc-800 p-4">
+          <div className="absolute right-0 top-0 h-full w-full max-w-xl border-l border-slate-800/80 bg-slate-950/70 shadow-2xl backdrop-blur">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 bg-gradient-to-r from-indigo-500/10 via-cyan-500/10 to-fuchsia-500/10 p-4">
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-zinc-100">Execution</div>
-                <div className="mt-0.5 truncate text-[11px] text-zinc-400">{selectedExecutionId}</div>
+                <div className="truncate text-sm font-semibold text-slate-100">Execution</div>
+                <div className="mt-0.5 truncate text-[11px] text-slate-300/80">{selectedExecutionId}</div>
               </div>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setDrawerOpen(false)}
-                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-900/80"
                 >
                   Close
                 </button>
               </div>
             </div>
 
-            <div className="h-full overflow-auto p-4 pb-24 text-zinc-200">
+            <div className="h-full overflow-auto p-4 pb-24 text-slate-200">
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={pollOnce}
-                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-900/80"
                 >
                   Poll once
                 </button>
                 <button
                   type="button"
                   onClick={pollAllOnce}
-                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-900/80"
                 >
                   Poll + steps + audit
                 </button>
                 <a
-                  className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-900/80"
                   href={pollUrl}
                   target="_blank"
                   rel="noreferrer"
@@ -500,8 +500,8 @@ export function ExecutePanel() {
                     className={
                       "rounded-lg border px-3 py-1.5 text-xs " +
                       (activeTab === k
-                        ? "border-indigo-500 bg-indigo-950/40 text-indigo-100"
-                        : "border-zinc-700 bg-zinc-900 hover:bg-zinc-800")
+                        ? "border-indigo-400/60 bg-indigo-500/10 text-indigo-100"
+                        : "border-slate-700/80 bg-slate-900/60 text-slate-100 hover:bg-slate-900/80")
                     }
                   >
                     {label}
@@ -510,33 +510,33 @@ export function ExecutePanel() {
               </div>
 
               {!result ? (
-                <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-sm text-zinc-300">
+                <div className="mt-4 rounded-xl border border-slate-800/80 bg-slate-900/35 p-3 text-sm text-slate-200 ring-1 ring-white/5">
                   Poll to load results.
                 </div>
               ) : (
                 <div className="mt-4">
                   {activeTab === "summary" ? (
                     <div className="grid gap-3">
-                      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                        <div className="text-[11px] text-zinc-400">Status</div>
-                        <div className="text-sm font-semibold text-zinc-100">{result.status}</div>
+                      <div className="rounded-xl border border-slate-800/80 bg-slate-900/35 p-3 ring-1 ring-white/5">
+                        <div className="text-[11px] text-slate-400">Status</div>
+                        <div className="text-sm font-semibold text-slate-100">{result.status}</div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                          <div className="text-[11px] text-zinc-400">Confidence</div>
-                          <div className="text-sm font-semibold text-zinc-100">
+                        <div className="rounded-xl border border-slate-800/80 bg-slate-900/35 p-3 ring-1 ring-white/5">
+                          <div className="text-[11px] text-slate-400">Confidence</div>
+                          <div className="text-sm font-semibold text-slate-100">
                             {typeof result.confidence === "number" ? result.confidence.toFixed(2) : "—"}
                           </div>
                         </div>
-                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                          <div className="text-[11px] text-zinc-400">Execution</div>
-                          <div className="text-sm font-semibold text-zinc-100">{result.execution_id}</div>
+                        <div className="rounded-xl border border-slate-800/80 bg-slate-900/35 p-3 ring-1 ring-white/5">
+                          <div className="text-[11px] text-slate-400">Execution</div>
+                          <div className="text-sm font-semibold text-slate-100">{result.execution_id}</div>
                         </div>
                       </div>
                       {result.result ? (
-                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                          <div className="text-[11px] text-zinc-400">Report</div>
-                          <pre className="mt-2 whitespace-pre-wrap text-[12px] leading-snug text-zinc-200">
+                        <div className="rounded-xl border border-slate-800/80 bg-slate-900/35 p-3 ring-1 ring-white/5">
+                          <div className="text-[11px] text-slate-400">Report</div>
+                          <pre className="mt-2 whitespace-pre-wrap text-[12px] leading-snug text-slate-100/90">
                             {result.result}
                           </pre>
                         </div>
@@ -704,7 +704,7 @@ export function ExecutePanel() {
                     <div className="grid gap-2">
                       {(() => {
                         const ex = (result.explainability || {}) as Explainability;
-                        const checks = asArray<Explainability["checks"][number]>(ex.checks);
+                        const checks = asArray<any>(ex.checks);
                         return (
                           <div className="grid gap-2">
                             {checks.length ? (
