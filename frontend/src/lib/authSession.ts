@@ -33,15 +33,25 @@ export async function ensureDemoSession(): Promise<{ accessToken: string; orgId:
   }
 
   if (!body?.access_token) {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    body = (await res.json()) as AuthResp;
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (res.ok) body = (await res.json()) as AuthResp;
+      else body = null;
+    } catch {
+      body = null;
+    }
   }
 
-  if (!body?.access_token || !body?.org_id) throw new Error("Failed to establish demo session");
+  if (!body?.access_token || !body?.org_id) {
+    // Clear any broken cached state and force the user to refresh.
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(ORG_STORAGE_KEY);
+    throw new Error("Failed to establish demo session");
+  }
   localStorage.setItem(TOKEN_STORAGE_KEY, body.access_token);
   localStorage.setItem(ORG_STORAGE_KEY, body.org_id);
   return { accessToken: body.access_token, orgId: body.org_id };

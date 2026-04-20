@@ -14,11 +14,17 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # bcrypt ignores bytes after 72; explicitly truncate to avoid surprising runtime errors.
+    p = (password or "")[:72]
+    return pwd_context.hash(p)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    try:
+        p = (password or "")[:72]
+        return pwd_context.verify(p, password_hash)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 @dataclass(frozen=True)
