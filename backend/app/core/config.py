@@ -4,9 +4,9 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Resolve `.env` regardless of whether uvicorn is started from repo root or `backend/`.
-_BACKEND_DIR = Path(__file__).resolve().parents[1]
-_REPO_ROOT = _BACKEND_DIR.parent
+# `__file__` is backend/app/core/config.py → parents[2] is `backend/`, parents[3] is repo root.
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
