@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +38,13 @@ def parse_eurlex_html_to_articles(*, html: str) -> list[ParsedUnit]:
 
     EUR-Lex markup varies; this aims to extract 'Article N' sections.
     """
+    try:
+        from bs4 import BeautifulSoup  # type: ignore
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(
+            "EU AI Act ingestion requires BeautifulSoup. Install backend deps: `pip install -r backend/requirements.txt`"
+        ) from e
+
     soup = BeautifulSoup(html, "lxml")
     # Prefer the main content container; fall back to body.
     root = soup.find("div", {"id": "TexteOnly"}) or soup.body or soup
