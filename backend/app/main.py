@@ -48,6 +48,7 @@ from app.validator.validator import OutcomeValidator
 from app.ingestion.seed_marketplace import seed_marketplace_packages
 from app.ingestion.seed_regulations import seed_regulation_units
 from app.ingestion.eurlex_ai_act import ingest_eu_ai_act_from_eurlex
+from app.ingestion.control_pack import ControlPackUnit, ingest_control_pack
 from app.personas import personas_to_dict
 from app.export.case_export import build_case_export, render_case_export_pdf
 from app.observability.logging import configure_logging
@@ -123,6 +124,16 @@ class EnableAgentRequest(BaseModel):
 class UpdateOrgPolicyRequest(BaseModel):
     allowed_packages: list[str] = Field(default_factory=list)
     blocked_packages: list[str] = Field(default_factory=list)
+
+
+class ControlPackIngestRequest(BaseModel):
+    framework_code: str
+    publisher: str = "customer"
+    version: str = "uploaded"
+    source_url: str | None = None
+    source_doc_id: str | None = None
+    jurisdiction: str | None = None
+    units: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CreateCaseRequest(BaseModel):
@@ -708,6 +719,40 @@ async def ingest_eu_ai_act(url: str | None = None, session: AsyncSession = Depen
     Authoritative ingestion (best-effort) from EUR-Lex ELI URL.
     """
     return await ingest_eu_ai_act_from_eurlex(session=session, url=(url or None) or "https://eur-lex.europa.eu/eli/reg/2024/1689/oj")
+
+
+@app.post("/regulations/ingest/control_pack")
+async def ingest_control_pack_endpoint(req: ControlPackIngestRequest, session: AsyncSession = Depends(get_session)):
+    """
+    Licensing-safe ingestion endpoint for SOC2 / ISO27001 (customer-provided packs).
+    """
+    framework = (req.framework_code or "").strip().upper()
+    if not framework:
+        raise HTTPException(status_code=400, detail="framework_code required")
+    units: list[ControlPackUnit] = []
+    for u in req.units:
+        if not isinstance(u, dict):
+            continue
+        unit_id = str(u.get("unit_id") or "").strip()
+        if not unit_id:
+            continue
+        units.append(
+            ControlPackUnit(
+                framework_code=framework,
+                unit_id=unit_id,
+                title=str(u.get("title") or ""),
+                text=str(u.get("text") or ""),
+                jurisdiction=req.jurisdiction,
+                source_url=req.source_url,
+                source_doc_id=req.source_doc_id,
+                version=req.version,
+                meta=(u.get("meta") if isinstance(u.get("meta"), dict) else None),
+            )
+        )
+
+    out = await ingest_control_pack(session=session, units=units, publisher=req.publisher)
+    out["framework_code"] = framework
+    return out
 
 
 @app.get("/agents")
