@@ -130,7 +130,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/cases/${id}/execute`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify({ intent, context: {} }),
+        body: JSON.stringify({ context: {} }),
       });
       await res.json();
       await load();

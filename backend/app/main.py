@@ -65,7 +65,7 @@ logger = logging.getLogger("oel")
 
 class ExecuteRequest(BaseModel):
     # Deprecated for UX: we synthesize intent from intake when absent.
-    intent: str | None = Field(default=None, min_length=3)
+    intent: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
     workflow: str | None = None
     org_id: UUID | None = None
