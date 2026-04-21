@@ -91,7 +91,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
     const ids = body.linked_executions || [];
     const full: ExecResp[] = [];
     for (const eid of ids.slice(0, 10)) {
-      const r = await fetch(`/api/executions/${eid}`, { cache: "no-store" });
+      const r = await fetch(`/api/executions/${eid}`, { headers, cache: "no-store" });
       full.push((await r.json()) as ExecResp);
     }
     setExecs(full);

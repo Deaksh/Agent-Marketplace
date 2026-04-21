@@ -1,5 +1,3 @@
-import { ExecutePanel } from "@/components/ExecutePanel";
-
 export default function Page() {
   return (
     <main className="mx-auto max-w-5xl p-6">
@@ -19,12 +17,18 @@ export default function Page() {
           </div>
         </div>
         <p className="mt-2 text-slate-200/90">
-          API-first MVP for regulatory compliance workflows. This UI is a thin client
-          for creating executions and viewing explainable results.
+          Compliance Decision Platform. Start by creating a case; executions are always case-scoped.
         </p>
       </div>
 
-      <ExecutePanel />
+      <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/35 p-6 text-slate-200 ring-1 ring-white/5">
+        <div className="text-sm">
+          Go to <a className="underline decoration-emerald-400/50 hover:text-white" href="/cases">Cases</a> to run a GDPR compliance review.
+        </div>
+        <div className="mt-2 text-xs text-slate-400">
+          The legacy executions panel was removed because `POST /execute` is deprecated.
+        </div>
+      </div>
     </main>
   );
 }
