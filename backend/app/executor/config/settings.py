@@ -13,7 +13,9 @@ class ExecutorSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="EXECUTOR_", extra="ignore")
 
-    watchtower_base_url: str = "http://localhost:8000/api/execution"
+    # Prefer 127.0.0.1: some environments resolve "localhost" to ::1 while the
+    # peer only listens on IPv4, which produces httpx "All connection attempts failed".
+    watchtower_base_url: str = "http://127.0.0.1:8000/api/execution"
     http_timeout_s: float = 20.0
     result_post_retry_attempts: int = 2  # initial try + 1 retry
 

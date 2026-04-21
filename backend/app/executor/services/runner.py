@@ -25,10 +25,14 @@ def _task_context_str(ctx: dict[str, Any]) -> str:
 
 
 async def run_task(*, task_id: str) -> AnalysisResult:
-    logger.info("task_received task_id=%s", task_id)
+    logger.info(
+        "task_received task_id=%s watchtower_base=%s",
+        task_id,
+        executor_settings.watchtower_base_url.rstrip("/"),
+    )
     timeout = httpx.Timeout(executor_settings.http_timeout_s)
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    # Do not use HTTP(S)_PROXY for loopback Watchtower; proxies often break localhost.
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         task_raw = await fetch_task(task_id=task_id, client=client)
         task = WatchtowerTask.model_validate(task_raw)
         logger.info("task_fetched task_id=%s regulation_id=%s model_id=%s", task_id, task.regulation_id, task.model_id)
