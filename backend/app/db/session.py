@@ -30,6 +30,27 @@ async def init_db() -> None:
         # Lightweight SQLite schema evolution for MVP (avoids introducing Alembic yet).
         # Ensures new nullable columns exist on existing tables in dev/codespaces.
         if settings.database_url.startswith("sqlite"):
+            # ComplianceCase intake + decision fields
+            cols = (await conn.execute(text("PRAGMA table_info(compliancecase)"))).all()
+            existing = {c[1] for c in cols}  # type: ignore[index]
+            alters: list[str] = []
+            if "system_name" not in existing:
+                alters.append("ALTER TABLE compliancecase ADD COLUMN system_name VARCHAR")
+            if "system_description" not in existing:
+                alters.append("ALTER TABLE compliancecase ADD COLUMN system_description VARCHAR")
+            if "use_case_type" not in existing:
+                alters.append("ALTER TABLE compliancecase ADD COLUMN use_case_type VARCHAR")
+            if "deployment_region" not in existing:
+                alters.append("ALTER TABLE compliancecase ADD COLUMN deployment_region VARCHAR")
+            if "data_types" not in existing:
+                alters.append("ALTER TABLE compliancecase ADD COLUMN data_types JSON")
+            if "reviewer_ids" not in existing:
+                alters.append("ALTER TABLE compliancecase ADD COLUMN reviewer_ids JSON")
+            if "decision_status" not in existing:
+                alters.append("ALTER TABLE compliancecase ADD COLUMN decision_status VARCHAR")
+            for stmt in alters:
+                await conn.execute(text(stmt))
+
             # Execution.org_id
             cols = (await conn.execute(text("PRAGMA table_info(execution)"))).all()
             existing = {c[1] for c in cols}  # type: ignore[index]
@@ -55,6 +76,52 @@ async def init_db() -> None:
                 alters.append("ALTER TABLE executionstep ADD COLUMN cost_usd_actual FLOAT")
             for stmt in alters:
                 await conn.execute(text(stmt))
+
+            # AuditLog new linkage fields
+            cols = (await conn.execute(text("PRAGMA table_info(auditlog)"))).all()
+            existing = {c[1] for c in cols}  # type: ignore[index]
+            alters = []
+            if "case_id" not in existing:
+                alters.append("ALTER TABLE auditlog ADD COLUMN case_id VARCHAR")
+            if "org_id" not in existing:
+                alters.append("ALTER TABLE auditlog ADD COLUMN org_id VARCHAR")
+            if "user_id" not in existing:
+                alters.append("ALTER TABLE auditlog ADD COLUMN user_id VARCHAR")
+            for stmt in alters:
+                await conn.execute(text(stmt))
+
+            # Outcome decision-first columns
+            cols = (await conn.execute(text("PRAGMA table_info(outcome)"))).all()
+            existing = {c[1] for c in cols}  # type: ignore[index]
+            alters = []
+            if "decision" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision VARCHAR")
+            if "severity" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN severity VARCHAR")
+            if "risk_score" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN risk_score FLOAT")
+            if "decision_version" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_version VARCHAR")
+            if "decision_generated_at" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_generated_at DATETIME")
+            if "decision_blocking_issues" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_blocking_issues JSON")
+            if "decision_required_actions" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_required_actions JSON")
+            if "decision_risks" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_risks JSON")
+            if "decision_recommendations" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_recommendations JSON")
+            if "decision_citations" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_citations JSON")
+            if "decision_explainability" not in existing:
+                alters.append("ALTER TABLE outcome ADD COLUMN decision_explainability JSON")
+            for stmt in alters:
+                await conn.execute(text(stmt))
+
+            # API key tables may not exist in older DBs; create_all above should create them,
+            # but if the DB existed before the models were introduced, ensure they're present.
+            await conn.run_sync(SQLModel.metadata.create_all)
 
             # AgentVersion.cert_status
             cols = (await conn.execute(text("PRAGMA table_info(agentversion)"))).all()
