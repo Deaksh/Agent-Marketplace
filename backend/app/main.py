@@ -58,6 +58,7 @@ from app.ingestion.reembed import reembed_all_regulation_units
 from app.personas import personas_to_dict
 from app.export.case_export import build_case_export, render_case_export_pdf
 from app.observability.logging import configure_logging
+from app.executor.api.routes import router as executor_router
 
 
 logger = logging.getLogger("oel")
@@ -288,6 +289,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Watchtower-driven executor endpoint (stateless) ---
+app.include_router(executor_router, tags=["executor"])
 
 
 @app.middleware("http")
