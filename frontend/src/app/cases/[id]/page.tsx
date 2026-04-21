@@ -142,12 +142,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   async function exportPdf() {
     const { id } = await params;
     if (!sess) return;
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8040"}/cases/${id}/export?format=pdf`, {
-      headers,
-    });
+    // Use same-origin proxy so the browser can render PDF reliably in Codespaces.
+    const res = await fetch(`/api/cases/${id}/export?format=pdf`, { headers, cache: "no-store" });
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   return (
