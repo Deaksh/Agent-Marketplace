@@ -9,6 +9,10 @@ class ExecutorSettings(BaseSettings):
 
     This service is intentionally stateless; it fetches all task/regulation/model data
     from Watchtower and returns results back to Watchtower.
+
+    The URL must be reachable from the host running uvicorn. A remote API (e.g. Codespaces)
+    cannot use 127.0.0.1 to reach Watchtower on a developer laptop; use the same network
+    environment or a tunnel (ngrok/cloudflared) to a public HTTPS URL.
     """
 
     model_config = SettingsConfigDict(env_prefix="EXECUTOR_", extra="ignore")
