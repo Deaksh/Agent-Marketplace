@@ -1,5 +1,4 @@
 import { backendBaseUrl } from "@/lib/backend";
-import { readJsonResponse } from "@/lib/readJsonResponse";
 
 function forwardHeaders(req: Request) {
   const h: Record<string, string> = { "content-type": "application/json" };
@@ -16,8 +15,9 @@ export async function GET(req: Request) {
     headers: forwardHeaders(req),
     cache: "no-store",
   });
-  const body = await readJsonResponse(upstream);
-  return Response.json(body, { status: upstream.status });
+  const ct = upstream.headers.get("content-type") || "application/json";
+  const text = await upstream.text();
+  return new Response(text, { status: upstream.status, headers: { "content-type": ct } });
 }
 
 export async function POST(req: Request) {
@@ -27,7 +27,8 @@ export async function POST(req: Request) {
     body: await req.text(),
     cache: "no-store",
   });
-  const body = await readJsonResponse(upstream);
-  return Response.json(body, { status: upstream.status });
+  const ct = upstream.headers.get("content-type") || "application/json";
+  const text = await upstream.text();
+  return new Response(text, { status: upstream.status, headers: { "content-type": ct } });
 }
 

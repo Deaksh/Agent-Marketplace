@@ -11,10 +11,28 @@ export function getOrgId(): string | null {
   return typeof window === "undefined" ? null : localStorage.getItem(ORG_STORAGE_KEY);
 }
 
+async function tokenIsValid(accessToken: string, orgId: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/me", {
+      headers: { Authorization: `Bearer ${accessToken}`, "X-Org-Id": orgId },
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    // If we can't validate (network), don't force logout.
+    return true;
+  }
+}
+
 export async function ensureDemoSession(): Promise<{ accessToken: string; orgId: string }> {
   const t = getAccessToken();
   const o = getOrgId();
-  if (t && o) return { accessToken: t, orgId: o };
+  if (t && o) {
+    const ok = await tokenIsValid(t, o);
+    if (ok) return { accessToken: t, orgId: o };
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(ORG_STORAGE_KEY);
+  }
 
   const email = "demo@oel.local";
   const password = "demo-demo-123";
