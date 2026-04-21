@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -9,56 +10,47 @@ DecisionValue = Literal["COMPLIANT", "NON_COMPLIANT", "NEEDS_REVIEW"]
 SeverityValue = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
-class Citation(BaseModel):
+class CitationV1(BaseModel):
+    regulation: str = Field(..., min_length=1)
+    article: str = Field(..., min_length=1)
+    text_snippet: str = Field(..., min_length=1)
+    relevance_score: float = Field(..., ge=0.0, le=1.0)
+
+
+class ExplainabilityV1(BaseModel):
+    reasoning_steps: list[Any] = Field(default_factory=list)
+
+
+class DecisionMetadataV1(BaseModel):
+    decision_version: Literal["v1"] = "v1"
+    generated_at: datetime
+
+
+class DecisionV1(BaseModel):
     """
-    Normalized citation for regulatory evidence.
+    Decision-first artifact (strict) produced by every execution.
 
-    This is intentionally stable and explicit so exports/audits can rely on it.
+    This schema is versioned and intended to be regulator/auditor friendly.
     """
 
-    regulation_code: str = Field(..., min_length=1)
-    unit_id: str = Field(..., min_length=1)
-    title: str = ""
-    snippet: str = Field(..., min_length=1)
-
-    score: float | None = None
-
-    jurisdiction: str | None = None
-    effective_from: str | None = None
-    effective_to: str | None = None
-
-    source_url: str | None = None
-    source_doc_id: str | None = None
-    source: dict[str, Any] = Field(default_factory=dict)
-
-
-class BlockingIssue(BaseModel):
-    key: str | None = None
-    severity: SeverityValue = "MEDIUM"
-    description: str = Field(..., min_length=1)
-    evidence: list[str] = Field(default_factory=list)
-
-
-class RequiredAction(BaseModel):
-    title: str = Field(..., min_length=1)
-    why: str | None = None
-    how: str | None = None
-    due_by: str | None = None
-    owner: str | None = None
-
-
-class ComplianceDecision(BaseModel):
     decision: DecisionValue
     severity: SeverityValue
     confidence: float = Field(..., ge=0.0, le=1.0)
+    risk_score: float = Field(..., ge=0.0, le=1.0)
 
-    blocking_issues: list[BlockingIssue] = Field(default_factory=list)
-    required_actions: list[RequiredAction] = Field(default_factory=list)
+    blocking_issues: list[str] = Field(default_factory=list)
+    required_actions: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
 
-    risks: list[dict[str, Any]] = Field(default_factory=list)
-    recommendations: list[dict[str, Any]] = Field(default_factory=list)
-    citations: list[Citation] = Field(default_factory=list)
+    citations: list[CitationV1] = Field(default_factory=list)
+    explainability: ExplainabilityV1 = Field(default_factory=ExplainabilityV1)
+    metadata: DecisionMetadataV1
 
-    explainability: dict[str, Any] = Field(default_factory=dict)
-    audit_trail: list[dict[str, Any]] = Field(default_factory=list)
+
+# Backwards-compatible aliases for older exports/state; keep until frontend migrates fully.
+ComplianceDecision = DecisionV1
+Citation = CitationV1
+BlockingIssue = Any
+RequiredAction = Any
 

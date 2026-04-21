@@ -10,6 +10,11 @@ type CaseResp = {
   status: string;
   final_decision?: any;
   linked_executions: string[];
+  system_name?: string;
+  system_description?: string;
+  use_case_type?: string;
+  deployment_region?: string;
+  data_types?: string[];
 };
 
 type ExecResp = {
@@ -63,9 +68,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const [audit, setAudit] = useState<AuditResp | null>(null);
   const [active, setActive] = useState<Tab>("summary");
   const [pending, setPending] = useState(false);
-  const [workflow, setWorkflow] = useState("auto");
-  const [framework, setFramework] = useState("EU_AI_ACT");
-  const [intent, setIntent] = useState("Check if my AI hiring tool is GDPR compliant");
+  const [intent] = useState<string>("");
 
   const headers = useMemo(() => {
     const h: Record<string, string> = {};
@@ -127,7 +130,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       const res = await fetch(`/api/cases/${id}/execute`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify({ intent, workflow, context: { workflow, framework_code: framework, regulation_code: framework } }),
+        body: JSON.stringify({ intent, context: {} }),
       });
       await res.json();
       await load();
@@ -174,39 +177,23 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
 
       <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/35 p-5 ring-1 ring-white/5">
         <div className="grid gap-3 md:grid-cols-4">
-          <label className="grid gap-1">
-            <span className="text-xs text-slate-300/80">Framework</span>
-            <select
-              value={framework}
-              onChange={(e) => setFramework(e.target.value)}
-              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
-            >
-              <option value="EU_AI_ACT">EU AI Act</option>
-              <option value="GDPR">GDPR</option>
-              <option value="SOC2">SOC 2</option>
-              <option value="ISO27001">ISO 27001</option>
-            </select>
-          </label>
-          <label className="grid gap-1">
-            <span className="text-xs text-slate-300/80">Workflow</span>
-            <select
-              value={workflow}
-              onChange={(e) => setWorkflow(e.target.value)}
-              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
-            >
-              <option value="auto">Auto</option>
-              <option value="regulation_lookup">Regulation lookup</option>
-              <option value="risk_scoring">Risk scoring</option>
-            </select>
-          </label>
-          <label className="grid gap-1 md:col-span-2">
-            <span className="text-xs text-slate-300/80">Intent</span>
-            <input
-              value={intent}
-              onChange={(e) => setIntent(e.target.value)}
-              className="rounded-xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
+          <div className="md:col-span-4 grid gap-2 rounded-xl border border-slate-800/80 bg-slate-950/40 p-3">
+            <div className="text-xs text-slate-300/80">Intake</div>
+            <div className="grid gap-1 text-sm text-slate-200 md:grid-cols-2">
+              <div>
+                System: <span className="text-slate-50 font-semibold">{caseData?.system_name || "—"}</span>
+              </div>
+              <div>
+                Type: <span className="text-slate-50 font-semibold">{caseData?.use_case_type || "—"}</span>
+              </div>
+              <div>
+                Region: <span className="text-slate-50 font-semibold">{caseData?.deployment_region || "—"}</span>
+              </div>
+              <div>
+                Data: <span className="text-slate-50 font-semibold">{(caseData?.data_types || []).join(", ") || "—"}</span>
+              </div>
+            </div>
+          </div>
           <div className="md:col-span-4 flex justify-end">
             <button
               type="button"

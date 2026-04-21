@@ -24,7 +24,7 @@ from app.db.models import (
     OrgPolicy,
     Outcome,
 )
-from app.schemas.decision import BlockingIssue, Citation, ComplianceDecision, RequiredAction
+from app.schemas.decision import CitationV1, DecisionMetadataV1, DecisionV1, ExplainabilityV1
 
 
 def _now() -> datetime:
@@ -51,48 +51,18 @@ class Orchestrator:
 
     async def plan(self, *, intent: str, context: dict[str, Any], state: dict[str, Any]) -> list[PlanStep]:
         """
-        MVP planner:
-        - Always run intent_parser first
-        - Then choose a workflow-specific set of steps
-        - Designed so we can swap for LLM function-calling planner later
+        Focused planner:
+        Hardcode the primary workflow: AI System GDPR Compliance Review.
         """
-        workflow_hint = (context.get("workflow") or "").strip().lower()
-        if workflow_hint:
-            state["workflow_hint"] = workflow_hint
-
-        # Always parse intent first to set state["workflow"]/["regulation_code"]/signals.
-        base: list[PlanStep] = [PlanStep("intent_parser", 0)]
-
-        # Decide workflow after intent_parser has executed (state may not exist yet here),
-        # so default to a safe, general plan; intent_parser can refine downstream behavior.
-        # The executor will still run all steps listed for the chosen plan.
-        # If the caller explicitly requests a workflow, honor it.
-        workflow = workflow_hint or "auto"
-
-        if workflow in {"regulation_lookup"}:
-            return base + [PlanStep("regulation_retriever", 1), PlanStep("report_generator", 2)]
-
-        if workflow in {"risk_scoring", "risk_scoring_only"}:
-            return base + [PlanStep("obligation_mapper", 1), PlanStep("risk_scorer", 2), PlanStep("report_generator", 3)]
-
-        # Default / auto:
-        # - For GDPR we keep the full pipeline.
-        # - For other frameworks we still retrieve evidence, then run risk+report (obligation mapper is GDPR-specific today).
-        framework = (state.get("framework_code") or context.get("framework_code") or state.get("regulation_code") or "").strip().upper()
-        if framework and framework != "GDPR":
-            plan = base + [PlanStep("regulation_retriever", 1), PlanStep("risk_scorer", 2), PlanStep("report_generator", 3)]
-        else:
-            plan = base + [
-                PlanStep("regulation_retriever", 1),
-                PlanStep("obligation_mapper", 2),
-                PlanStep("risk_scorer", 3),
-                PlanStep("report_generator", 4),
-            ]
-        # Insert enabled marketplace agents (parallel) after obligation mapping.
-        marketplace_steps = await self._marketplace_plan_steps(context=context)
-        if marketplace_steps:
-            # run in parallel group 2.5 (we'll use group 25)
-            plan = plan[:3] + marketplace_steps + plan[3:]
+        state["workflow"] = "gdpr_compliance_review"
+        # Keep intent parser for structured signals, but intake is the primary input now.
+        plan: list[PlanStep] = [
+            PlanStep("intent_parser", 0),
+            PlanStep("regulation_retriever", 1),
+            PlanStep("obligation_mapper", 2),
+            PlanStep("risk_scorer", 3),
+            PlanStep("report_generator", 4),
+        ]
         return plan
 
     async def _marketplace_plan_steps(self, *, context: dict[str, Any]) -> list[PlanStep]:
@@ -141,6 +111,8 @@ class Orchestrator:
         self._session.add(
             AuditLog(
                 execution_id=execution.id,
+                case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                org_id=execution.org_id,
                 event_type="execution.started",
                 message="Execution started",
                 payload={
@@ -185,7 +157,7 @@ class Orchestrator:
             state["confidence"] = confidence
             state["explainability"] = explainability
 
-            decision = self._build_compliance_decision(state=state, audit_trail=audit_trail)
+            decision = self._build_decision_v1(state=state, audit_trail=audit_trail)
             outcome = Outcome(
                 execution_id=execution.id,
                 result={
@@ -200,6 +172,17 @@ class Orchestrator:
                 },
                 confidence=confidence,
                 explainability_trace=explainability,
+                decision=decision.decision,
+                severity=decision.severity,
+                risk_score=decision.risk_score,
+                decision_version=decision.metadata.decision_version,
+                decision_generated_at=decision.metadata.generated_at,
+                decision_blocking_issues=decision.blocking_issues,
+                decision_required_actions=decision.required_actions,
+                decision_risks=decision.risks,
+                decision_recommendations=decision.recommendations,
+                decision_citations=[c.model_dump() for c in decision.citations],
+                decision_explainability=decision.explainability.model_dump(),
             )
             self._session.add(outcome)
 
@@ -209,6 +192,8 @@ class Orchestrator:
             self._session.add(
                 AuditLog(
                     execution_id=execution.id,
+                    case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                    org_id=execution.org_id,
                     event_type="execution.succeeded",
                     message="Execution succeeded",
                     payload={"confidence": confidence},
@@ -224,6 +209,8 @@ class Orchestrator:
             self._session.add(
                 AuditLog(
                     execution_id=execution.id,
+                    case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                    org_id=execution.org_id,
                     event_type="execution.failed",
                     message="Execution failed",
                     payload={"error": str(e)},
@@ -232,16 +219,10 @@ class Orchestrator:
             await self._session.commit()
             raise
 
-    def _build_compliance_decision(self, *, state: dict[str, Any], audit_trail: list[dict[str, Any]]) -> ComplianceDecision:
-        """
-        Deterministic decision synthesis from the current MVP state.
-
-        This will become workflow-specific and policy-driven, but is strict + stable today.
-        """
+    def _build_decision_v1(self, *, state: dict[str, Any], audit_trail: list[dict[str, Any]]) -> DecisionV1:
         confidence = float(state.get("confidence") or 0.0)
         explainability = state.get("explainability") or {}
 
-        # Evidence check comes from validator when present (report_generator also uses this).
         evidence_ok = True
         checks = explainability.get("checks") or []
         if isinstance(checks, list):
@@ -251,53 +232,46 @@ class Orchestrator:
                     break
 
         risk_score = float(state.get("risk_score") or 0.0)
-        risks = state.get("risks") or []
-        recommendations = state.get("recommendations") or []
+
+        # Normalize strings (decision-first UX): the agents may emit dicts; we collapse to human-readable strings.
         gaps = state.get("gaps") or []
-
-        citations = self._extract_citations(state=state, audit_trail=audit_trail)
-
-        blocking_issues: list[BlockingIssue] = []
+        blocking_issues: list[str] = []
         for g in gaps:
-            if not isinstance(g, dict):
-                continue
-            sev = str(g.get("severity") or "medium").lower()
-            sev_norm = {"low": "LOW", "medium": "MEDIUM", "high": "HIGH", "critical": "CRITICAL"}.get(sev, "MEDIUM")
-            blocking_issues.append(
-                BlockingIssue(
-                    key=g.get("key"),
-                    severity=sev_norm,  # type: ignore[arg-type]
-                    description=str(g.get("description") or "Unspecified issue"),
-                    evidence=[],
-                )
-            )
+            if isinstance(g, dict):
+                blocking_issues.append(str(g.get("description") or g.get("key") or "Unspecified issue"))
+            elif isinstance(g, str) and g.strip():
+                blocking_issues.append(g.strip())
 
-        required_actions: list[RequiredAction] = []
-        for r in recommendations:
-            if not isinstance(r, dict):
-                continue
-            title = str(r.get("title") or "").strip()
-            if not title:
-                continue
-            required_actions.append(RequiredAction(title=title, why=r.get("why"), how=r.get("how")))
+        recs = state.get("recommendations") or []
+        required_actions: list[str] = []
+        recommendations: list[str] = []
+        for r in recs:
+            if isinstance(r, dict):
+                t = str(r.get("title") or "").strip()
+                if t:
+                    required_actions.append(t)
+                why = str(r.get("why") or "").strip()
+                if why:
+                    recommendations.append(why)
+            elif isinstance(r, str) and r.strip():
+                required_actions.append(r.strip())
 
-        # Decision logic (MVP but explicit):
-        # - Missing citations/evidence => NEEDS_REVIEW (blocks enterprise approvals)
-        # - High risk score => NON_COMPLIANT
-        # - Otherwise COMPLIANT with actions
+        risks_raw = state.get("risks") or []
+        risks: list[str] = []
+        for rr in risks_raw:
+            if isinstance(rr, dict):
+                risks.append(str(rr.get("risk") or rr.get("title") or rr.get("description") or "Risk"))
+            elif isinstance(rr, str) and rr.strip():
+                risks.append(rr.strip())
+
+        citations = self._extract_citations_v1(state=state, audit_trail=audit_trail)
+
+        # Deterministic decision logic (tightened for decision-first UX):
         if not evidence_ok or not citations:
             decision_value: str = "NEEDS_REVIEW"
             severity_value: str = "HIGH" if risk_score >= 0.55 else "MEDIUM"
             if not citations:
-                blocking_issues.insert(
-                    0,
-                    BlockingIssue(
-                        key="insufficient_citations",
-                        severity="HIGH",
-                        description="Decision missing required regulatory citations; retrieval evidence is insufficient.",
-                        evidence=[],
-                    ),
-                )
+                blocking_issues.insert(0, "Decision missing required regulatory citations; retrieval evidence is insufficient.")
         elif risk_score >= 0.75:
             decision_value = "NON_COMPLIANT"
             severity_value = "HIGH"
@@ -308,20 +282,34 @@ class Orchestrator:
             decision_value = "COMPLIANT"
             severity_value = "LOW" if risk_score < 0.35 else "MEDIUM"
 
-        return ComplianceDecision(
+        # Ensure every surfaced issue/action has at least one citation available.
+        # For now we enforce by requiring citations non-empty when we have blockers/risks/actions;
+        # the UI/export can later display the exact mapping once we add structured links.
+        if (blocking_issues or risks or required_actions) and not citations:
+            citations = [
+                CitationV1(
+                    regulation="GDPR",
+                    article="UNKNOWN",
+                    text_snippet="Evidence missing: the system could not retrieve relevant regulation snippets for this issue.",
+                    relevance_score=0.0,
+                )
+            ]
+
+        return DecisionV1(
             decision=decision_value,  # type: ignore[arg-type]
             severity=severity_value,  # type: ignore[arg-type]
             confidence=max(0.0, min(1.0, confidence)),
-            blocking_issues=blocking_issues,
-            required_actions=required_actions,
-            risks=risks if isinstance(risks, list) else [],
-            recommendations=recommendations if isinstance(recommendations, list) else [],
-            citations=citations,
-            explainability=explainability if isinstance(explainability, dict) else {},
-            audit_trail=audit_trail,
+            risk_score=max(0.0, min(1.0, risk_score)),
+            blocking_issues=blocking_issues[:20],
+            required_actions=required_actions[:20],
+            risks=risks[:30],
+            recommendations=recommendations[:30],
+            citations=citations[:20],
+            explainability=ExplainabilityV1(reasoning_steps=list(explainability.get("checks") or []) + list(explainability.get("notes") or [])),
+            metadata=DecisionMetadataV1(generated_at=_now()),
         )
 
-    def _extract_citations(self, *, state: dict[str, Any], audit_trail: list[dict[str, Any]]) -> list[Citation]:
+    def _extract_citations_v1(self, *, state: dict[str, Any], audit_trail: list[dict[str, Any]]) -> list[CitationV1]:
         """
         Normalize citations from the regulation retriever output.
 
@@ -338,25 +326,18 @@ class Orchestrator:
                         raw_snippets = out["snippets"]
                     break
 
-        citations: list[Citation] = []
+        citations: list[CitationV1] = []
         for s in raw_snippets[:20]:
             if not isinstance(s, dict):
                 continue
             meta = s.get("metadata") if isinstance(s.get("metadata"), dict) else {}
-            # Allow both legacy metadata shape and future normalized fields.
-            citation = Citation(
-                regulation_code=str(s.get("regulation_code") or meta.get("regulation_code") or "UNKNOWN"),
-                unit_id=str(s.get("unit_id") or meta.get("unit_id") or "UNKNOWN"),
-                title=str(s.get("title") or ""),
-                snippet=str(s.get("text") or s.get("snippet") or "").strip() or "—",
-                score=(float(s["score"]) if isinstance(s.get("score"), (int, float)) else None),
-                jurisdiction=(meta.get("jurisdiction") if isinstance(meta.get("jurisdiction"), str) else None),
-                effective_from=(meta.get("effective_from") if isinstance(meta.get("effective_from"), str) else None),
-                effective_to=(meta.get("effective_to") if isinstance(meta.get("effective_to"), str) else None),
-                source_url=(meta.get("source_url") if isinstance(meta.get("source_url"), str) else meta.get("source") if isinstance(meta.get("source"), str) else None),
-                source_doc_id=(meta.get("source_doc_id") if isinstance(meta.get("source_doc_id"), str) else None),
-                source=meta,
-            )
+            regulation = str(s.get("regulation_code") or meta.get("regulation_code") or "UNKNOWN")
+            article = str(s.get("unit_id") or meta.get("unit_id") or "UNKNOWN")
+            snippet = str(s.get("text") or s.get("snippet") or "").strip() or "—"
+            score = float(s["score"]) if isinstance(s.get("score"), (int, float)) else 0.05
+            # Map heuristic score into [0,1] for relevance_score.
+            relevance = max(0.0, min(1.0, score if score <= 1.0 else 1.0))
+            citation = CitationV1(regulation=regulation, article=article, text_snippet=snippet[:600], relevance_score=relevance)
             citations.append(citation)
         return citations
 
@@ -508,6 +489,8 @@ class Orchestrator:
         self._session.add(
             AuditLog(
                 execution_id=execution.id,
+                case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                org_id=execution.org_id,
                 step_id=step_row.id,
                 event_type="step.started",
                 message=f"Step started: {step_row.agent_name}",
@@ -535,6 +518,8 @@ class Orchestrator:
                         self._session.add(
                             AuditLog(
                                 execution_id=execution.id,
+                                case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                                org_id=execution.org_id,
                                 step_id=step_row.id,
                                 event_type="step.retried",
                                 message=f"Step retrying ({attempt}/{max_attempts}): {step_row.agent_name}",
@@ -572,6 +557,8 @@ class Orchestrator:
                     self._session.add(
                         AuditLog(
                             execution_id=execution.id,
+                            case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                            org_id=execution.org_id,
                             step_id=step_row.id,
                             event_type="step.fallback",
                             message=f"Falling back from {step_row.agent_name} to {fb}",
@@ -605,6 +592,8 @@ class Orchestrator:
             self._session.add(
                 AuditLog(
                     execution_id=execution.id,
+                    case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                    org_id=execution.org_id,
                     step_id=step_row.id,
                     event_type="step.succeeded",
                     message=f"Step succeeded: {step_row.agent_name}",
@@ -656,6 +645,8 @@ class Orchestrator:
             self._session.add(
                 AuditLog(
                     execution_id=execution.id,
+                    case_id=(execution.case_id if getattr(execution, "case_id", None) else None),
+                    org_id=execution.org_id,
                     step_id=step_row.id,
                     event_type="step.failed",
                     message=f"Step failed: {step_row.agent_name}",

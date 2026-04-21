@@ -55,6 +55,26 @@ class Membership(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now_utc, index=True)
 
 
+class ApiKey(SQLModel, table=True):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    org_id: UUID = Field(index=True)
+    name: str = Field(default="default", index=True)
+    key_hash: str = Field(index=True, unique=True)
+    prefix: str = Field(index=True)
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+    revoked_at: datetime | None = Field(default=None, index=True)
+    last_used_at: datetime | None = Field(default=None, index=True)
+
+
+class ApiKeyUsage(SQLModel, table=True):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    api_key_id: UUID = Field(index=True)
+    org_id: UUID = Field(index=True)
+    path: str = Field(index=True)
+    method: str = Field(index=True)
+    created_at: datetime = Field(default_factory=_now_utc, index=True)
+
+
 class AgentPackage(SQLModel, table=True):
     """
     Stable identity for an agent across versions (marketplace-facing).
@@ -176,7 +196,11 @@ class AuditLog(SQLModel, table=True):
     """
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    execution_id: UUID = Field(index=True)
+    # Many events are execution-scoped, but we also log case-scoped lifecycle events.
+    execution_id: UUID | None = Field(default=None, index=True)
+    case_id: UUID | None = Field(default=None, index=True)
+    org_id: UUID | None = Field(default=None, index=True)
+    user_id: UUID | None = Field(default=None, index=True)
     step_id: Optional[UUID] = Field(default=None, index=True)
 
     event_type: str = Field(index=True)  # execution.* | step.* | system.*
@@ -193,6 +217,19 @@ class Outcome(SQLModel, table=True):
     result: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
     confidence: float = 0.0  # 0..1
     explainability_trace: dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLITE_JSON))
+    # Decision-first persisted fields (DecisionV1)
+    decision: str | None = Field(default=None, index=True)
+    severity: str | None = Field(default=None, index=True)
+    risk_score: float | None = Field(default=None, index=True)
+    decision_version: str | None = Field(default=None, index=True)
+    decision_generated_at: datetime | None = Field(default=None, index=True)
+
+    decision_blocking_issues: list[str] = Field(default_factory=list, sa_column=Column("decision_blocking_issues", SQLITE_JSON))
+    decision_required_actions: list[str] = Field(default_factory=list, sa_column=Column("decision_required_actions", SQLITE_JSON))
+    decision_risks: list[str] = Field(default_factory=list, sa_column=Column("decision_risks", SQLITE_JSON))
+    decision_recommendations: list[str] = Field(default_factory=list, sa_column=Column("decision_recommendations", SQLITE_JSON))
+    decision_citations: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column("decision_citations", SQLITE_JSON))
+    decision_explainability: dict[str, Any] = Field(default_factory=dict, sa_column=Column("decision_explainability", SQLITE_JSON))
     created_at: datetime = Field(default_factory=_now_utc)
 
 
@@ -243,6 +280,16 @@ class ComplianceCase(SQLModel, table=True):
 
     title: str = Field(index=True)
     description: str = ""
+
+    # Compliance intake (guided input)
+    system_name: str = Field(default="", index=True)
+    system_description: str = ""
+    use_case_type: str = Field(default="other", index=True)  # chatbot|hiring|recommendation|other
+    deployment_region: str = Field(default="global", index=True)  # EU|US|global
+    data_types: list[str] = Field(default_factory=list, sa_column=Column("data_types", SQLITE_JSON))
+    reviewer_ids: list[str] = Field(default_factory=list, sa_column=Column("reviewer_ids", SQLITE_JSON))
+
+    decision_status: str = Field(default="NOT_STARTED", index=True)  # NOT_STARTED|IN_PROGRESS|FINALIZED
 
     status: str = Field(default="DRAFT", index=True)  # DRAFT|IN_REVIEW|APPROVED|REJECTED
     final_decision: dict[str, Any] | None = Field(default=None, sa_column=Column(SQLITE_JSON))

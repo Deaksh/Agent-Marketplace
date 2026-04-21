@@ -73,6 +73,24 @@ async def build_case_export(*, session: AsyncSession, case_id: UUID) -> dict[str
         outcome = outcome_by_exec.get(e.id)
         payload = (outcome.result if outcome else {}) or {}
         decision = payload.get("decision") if isinstance(payload.get("decision"), dict) else None
+        if not decision and outcome:
+            # Prefer persisted decision-first columns when present.
+            decision = {
+                "decision": getattr(outcome, "decision", None),
+                "severity": getattr(outcome, "severity", None),
+                "confidence": getattr(outcome, "confidence", None),
+                "risk_score": getattr(outcome, "risk_score", None),
+                "blocking_issues": getattr(outcome, "decision_blocking_issues", []) or [],
+                "required_actions": getattr(outcome, "decision_required_actions", []) or [],
+                "risks": getattr(outcome, "decision_risks", []) or [],
+                "recommendations": getattr(outcome, "decision_recommendations", []) or [],
+                "citations": getattr(outcome, "decision_citations", []) or [],
+                "explainability": getattr(outcome, "decision_explainability", {}) or {},
+                "metadata": {
+                    "decision_version": getattr(outcome, "decision_version", None),
+                    "generated_at": (getattr(outcome, "decision_generated_at", None).isoformat() if getattr(outcome, "decision_generated_at", None) else None),
+                },
+            }
 
         e_steps = [s for s in steps if s.execution_id == e.id]
         e_steps.sort(key=lambda s: s.step_index)
@@ -154,6 +172,13 @@ async def build_case_export(*, session: AsyncSession, case_id: UUID) -> dict[str
             "owner_id": case.owner_id,
             "title": case.title,
             "description": case.description,
+            "system_name": getattr(case, "system_name", ""),
+            "system_description": getattr(case, "system_description", ""),
+            "use_case_type": getattr(case, "use_case_type", ""),
+            "deployment_region": getattr(case, "deployment_region", ""),
+            "data_types": getattr(case, "data_types", []) or [],
+            "reviewer_ids": getattr(case, "reviewer_ids", []) or [],
+            "decision_status": getattr(case, "decision_status", None),
             "status": case.status,
             "created_at": case.created_at.isoformat() if case.created_at else None,
             "updated_at": case.updated_at.isoformat() if case.updated_at else None,
@@ -189,6 +214,15 @@ def render_case_export_pdf(*, export: dict[str, Any]) -> bytes:
     line(f"Case ID: {case.get('case_id') or ''}")
     line(f"Status: {case.get('status') or ''}")
     line(f"Owner: {case.get('owner_id') or ''}")
+    if case.get("system_name"):
+        line(f"System: {case.get('system_name')}")
+    if case.get("use_case_type"):
+        line(f"System type: {case.get('use_case_type')}")
+    if case.get("deployment_region"):
+        line(f"Region: {case.get('deployment_region')}")
+    dts = case.get("data_types")
+    if isinstance(dts, list) and dts:
+        line(f"Data types: {', '.join([str(x) for x in dts][:8])}")
     line("")
 
     c.setFont("Helvetica-Bold", 12)
@@ -197,6 +231,8 @@ def render_case_export_pdf(*, export: dict[str, Any]) -> bytes:
     line(f"Decision: {decision.get('decision') or '—'}")
     line(f"Severity: {decision.get('severity') or '—'}")
     line(f"Confidence: {decision.get('confidence') if decision else '—'}")
+    if decision.get("risk_score") is not None:
+        line(f"Risk score: {decision.get('risk_score')}")
     line("")
 
     blocking = decision.get("blocking_issues") if isinstance(decision, dict) else None
@@ -218,8 +254,11 @@ def render_case_export_pdf(*, export: dict[str, Any]) -> bytes:
         for ci in citations[:15]:
             if not isinstance(ci, dict):
                 continue
-            line(f"- {ci.get('regulation_code')} {ci.get('unit_id')} {ci.get('title') or ''}".strip())
-            snippet = str(ci.get("snippet") or "").replace("\n", " ").strip()
+            # Support both legacy and DecisionV1 citation shapes.
+            reg = ci.get("regulation") or ci.get("regulation_code")
+            art = ci.get("article") or ci.get("unit_id")
+            line(f"- {reg} {art}".strip())
+            snippet = str(ci.get("text_snippet") or ci.get("snippet") or "").replace("\n", " ").strip()
             if snippet:
                 line(f"  {snippet[:140]}", dy=12)
         line("")

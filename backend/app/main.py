@@ -26,11 +26,14 @@ from app.agents.registry import AgentRegistry, spec_to_dict
 from app.core.config import settings
 from app.auth.deps import require_org_context, require_user
 from app.auth.rbac import OrgContext, require_org_role, require_org_role_header
+from app.auth.api_keys import ApiKeyContext, generate_api_key, require_api_key
 from app.auth.jwt import create_access_token, decode_access_token, hash_password, verify_password
 from app.db.models import Agent as AgentRow
 from app.db.models import (
     AgentPackage,
     AgentVersion,
+    ApiKey,
+    ApiKeyUsage,
     AuditLog,
     Execution,
     ExecutionStep,
@@ -61,7 +64,8 @@ logger = logging.getLogger("oel")
 
 
 class ExecuteRequest(BaseModel):
-    intent: str = Field(..., min_length=3)
+    # Deprecated for UX: we synthesize intent from intake when absent.
+    intent: str | None = Field(default=None, min_length=3)
     context: dict[str, Any] = Field(default_factory=dict)
     workflow: str | None = None
     org_id: UUID | None = None
@@ -130,6 +134,15 @@ class UpdateOrgPolicyRequest(BaseModel):
     blocked_packages: list[str] = Field(default_factory=list)
 
 
+class AddMemberRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    role: str = Field(default="viewer")  # viewer|reviewer|admin
+
+
+class UpdateMemberRoleRequest(BaseModel):
+    role: str = Field(..., min_length=3)  # viewer|reviewer|admin
+
+
 class ControlPackIngestRequest(BaseModel):
     framework_code: str
     publisher: str = "customer"
@@ -145,12 +158,24 @@ class CreateCaseRequest(BaseModel):
     description: str = ""
     owner_id: str | None = None
     org_id: UUID | None = None
+    system_name: str = ""
+    system_description: str = ""
+    use_case_type: str = "other"  # chatbot|hiring|recommendation|other
+    deployment_region: str = "global"  # EU|US|global
+    data_types: list[str] = Field(default_factory=list)
+    reviewer_ids: list[str] = Field(default_factory=list)
 
 
 class UpdateCaseRequest(BaseModel):
     title: str | None = Field(default=None, min_length=3)
     description: str | None = None
     owner_id: str | None = None
+    system_name: str | None = None
+    system_description: str | None = None
+    use_case_type: str | None = None
+    deployment_region: str | None = None
+    data_types: list[str] | None = None
+    reviewer_ids: list[str] | None = None
 
 
 class FinalizeCaseRequest(BaseModel):
@@ -186,6 +211,10 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+class CreateApiKeyRequest(BaseModel):
+    name: str = Field(default="default", min_length=1)
 
 
 async def require_admin_org(
@@ -394,6 +423,13 @@ async def create_case(
         description=req.description or "",
         owner_id=req.owner_id or str(ctx.user.id),
         org_id=ctx.org_id,
+        system_name=(req.system_name or "").strip(),
+        system_description=req.system_description or "",
+        use_case_type=(req.use_case_type or "other").strip().lower(),
+        deployment_region=(req.deployment_region or "global").strip().upper(),
+        data_types=[str(x) for x in (req.data_types or []) if str(x).strip()],
+        reviewer_ids=[str(x) for x in (req.reviewer_ids or []) if str(x).strip()],
+        decision_status="NOT_STARTED",
         status="DRAFT",
     )
     session.add(c)
@@ -428,6 +464,13 @@ async def org_create_case(
         description=req.description or "",
         owner_id=req.owner_id or str(ctx.user.id),
         org_id=org_id,
+        system_name=(req.system_name or "").strip(),
+        system_description=req.system_description or "",
+        use_case_type=(req.use_case_type or "other").strip().lower(),
+        deployment_region=(req.deployment_region or "global").strip().upper(),
+        data_types=[str(x) for x in (req.data_types or []) if str(x).strip()],
+        reviewer_ids=[str(x) for x in (req.reviewer_ids or []) if str(x).strip()],
+        decision_status="NOT_STARTED",
         status="DRAFT",
     )
     session.add(c)
@@ -640,6 +683,18 @@ async def org_update_case(
         c.description = req.description
     if req.owner_id is not None:
         c.owner_id = req.owner_id
+    if req.system_name is not None:
+        c.system_name = req.system_name
+    if req.system_description is not None:
+        c.system_description = req.system_description
+    if req.use_case_type is not None:
+        c.use_case_type = req.use_case_type
+    if req.deployment_region is not None:
+        c.deployment_region = req.deployment_region
+    if req.data_types is not None:
+        c.data_types = [str(x) for x in req.data_types if str(x).strip()]
+    if req.reviewer_ids is not None:
+        c.reviewer_ids = [str(x) for x in req.reviewer_ids if str(x).strip()]
     c.updated_at = datetime.utcnow()
     await session.merge(c)
     await session.commit()
@@ -725,12 +780,30 @@ async def transition_case(
     if new_status not in {"DRAFT", "IN_REVIEW", "APPROVED", "REJECTED"}:
         raise HTTPException(status_code=400, detail="Invalid status")
 
+    # Strict state machine: DRAFT -> IN_REVIEW -> (APPROVED|REJECTED)
+    prev = (c.status or "DRAFT").strip().upper()
+    allowed: dict[str, set[str]] = {
+        "DRAFT": {"IN_REVIEW"},
+        "IN_REVIEW": {"APPROVED", "REJECTED"},
+        "APPROVED": set(),
+        "REJECTED": set(),
+    }
+    if new_status == prev:
+        raise HTTPException(status_code=400, detail="No-op transition")
+    if new_status not in allowed.get(prev, set()):
+        raise HTTPException(status_code=400, detail=f"Invalid transition {prev} -> {new_status}")
+    if new_status in {"APPROVED", "REJECTED"} and ctx.membership.role not in {"admin", "reviewer"}:
+        raise HTTPException(status_code=403, detail="Reviewer role required to finalize")
+
     c.status = new_status
     c.updated_at = datetime.utcnow()
     if new_status in {"APPROVED", "REJECTED"}:
         c.finalized_at = datetime.utcnow()
         if req.final_decision is not None:
             c.final_decision = req.final_decision
+        c.decision_status = "FINALIZED"
+    else:
+        c.decision_status = "IN_PROGRESS"
     await session.merge(c)
     await session.commit()
 
@@ -739,6 +812,18 @@ async def transition_case(
         .scalars()
         .all()
     )
+    session.add(
+        AuditLog(
+            execution_id=(ex_ids[0] if ex_ids else None),
+            case_id=case_id,
+            org_id=ctx.org_id,
+            user_id=ctx.user.id,
+            event_type="case.transitioned",
+            message="Case status transitioned",
+            payload={"from": prev, "to": new_status},
+        )
+    )
+    await session.commit()
     return CaseResponse(
         case_id=c.id,
         title=c.title,
@@ -1214,6 +1299,139 @@ async def create_org(name: str, session: AsyncSession = Depends(get_session)):
     return {"ok": True, "org_id": str(org.id), "name": org.name}
 
 
+@app.post("/orgs/{org_id}/api_keys")
+async def org_create_api_key(
+    org_id: UUID,
+    req: CreateApiKeyRequest,
+    admin_org_id: UUID = Depends(require_admin_org),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != admin_org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    raw, prefix, key_hash = generate_api_key(prefix="oel")
+    row = ApiKey(org_id=org_id, name=req.name.strip(), key_hash=key_hash, prefix=prefix)
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return {
+        "ok": True,
+        "api_key_id": str(row.id),
+        "name": row.name,
+        "prefix": row.prefix,
+        "api_key": raw,  # shown once
+    }
+
+
+@app.get("/orgs/{org_id}/api_keys")
+async def org_list_api_keys(org_id: UUID, admin_org_id: UUID = Depends(require_admin_org), session: AsyncSession = Depends(get_session)):
+    if org_id != admin_org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    rows = (await session.execute(select(ApiKey).where(ApiKey.org_id == org_id).order_by(ApiKey.created_at.desc()))).scalars().all()
+    return {
+        "org_id": str(org_id),
+        "keys": [
+            {
+                "id": str(k.id),
+                "name": k.name,
+                "prefix": k.prefix,
+                "created_at": k.created_at.isoformat() if k.created_at else None,
+                "revoked_at": k.revoked_at.isoformat() if k.revoked_at else None,
+                "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+            }
+            for k in rows
+        ],
+    }
+
+
+@app.post("/orgs/{org_id}/api_keys/{api_key_id}/revoke")
+async def org_revoke_api_key(
+    org_id: UUID,
+    api_key_id: UUID,
+    admin_org_id: UUID = Depends(require_admin_org),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != admin_org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    row = (await session.execute(select(ApiKey).where(ApiKey.id == api_key_id).where(ApiKey.org_id == org_id))).scalars().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="API key not found")
+    row.revoked_at = datetime.utcnow()
+    await session.merge(row)
+    await session.commit()
+    return {"ok": True, "revoked": True}
+
+
+@app.post("/api/execute", response_model=ExecuteResponse)
+async def api_key_execute_case(
+    req: ExecuteRequest,
+    background: BackgroundTasks,
+    api_ctx: ApiKeyContext = Depends(require_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    # Programmatic execution: requires case_id and uses API key org_id.
+    if not req.case_id:
+        raise HTTPException(status_code=400, detail="case_id required")
+    case = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == req.case_id))).scalars().first()
+    if not case or case.org_id != api_ctx.org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    # Mirror the case execution behavior (workflow + synthesized intent) without user RBAC.
+    if isinstance(req.context, dict):
+        req.context["case_id"] = str(case.id)
+        req.context["org_id"] = str(api_ctx.org_id)
+        req.context["intake"] = {
+            "system_name": case.system_name,
+            "system_type": case.use_case_type,
+            "deployment_region": case.deployment_region,
+            "data_types": case.data_types,
+            "reviewer_ids": case.reviewer_ids,
+        }
+        req.context["workflow"] = "gdpr_compliance_review"
+        req.context["framework_code"] = "GDPR"
+        req.context["regulation_code"] = "GDPR"
+    req.intent = (req.intent or f"Review GDPR compliance for {case.system_name or 'the AI system'}").strip()
+
+    idem = (req.idempotency_key or (req.context.get("idempotency_key") if isinstance(req.context, dict) else None) or "").strip()
+    if not idem:
+        idem_payload = {
+            "case_id": str(case.id),
+            "org_id": str(api_ctx.org_id),
+            "workflow": "gdpr_compliance_review",
+            "intent": req.intent,
+            "context": req.context,
+        }
+        idem = "apikeyexec:" + hashlib.sha256(json.dumps(idem_payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:32]
+        if isinstance(req.context, dict):
+            req.context["idempotency_key"] = idem
+
+    existing = (
+        (
+            await session.execute(
+                select(Execution).where(Execution.case_id == case.id).where(Execution.idempotency_key == idem)  # type: ignore[arg-type]
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing:
+        return ExecuteResponse(execution_id=existing.id, status=existing.status)
+
+    execution = Execution(
+        id=uuid5(NAMESPACE_URL, f"oel:{idem}"),
+        idempotency_key=idem,
+        org_id=api_ctx.org_id,
+        case_id=case.id,
+        intent=req.intent or "",
+        context=req.context,
+        workflow="gdpr_compliance_review",
+        status="queued",
+    )
+    session.add(execution)
+    await session.commit()
+    await session.refresh(execution)
+    background.add_task(_run_execution, execution_id=execution.id)
+    return ExecuteResponse(execution_id=execution.id, status="queued")
+
+
 @app.get("/orgs/{org_id}/agents")
 async def org_list_enabled(org_id: UUID, session: AsyncSession = Depends(get_session)):
     rows = (
@@ -1337,6 +1555,109 @@ async def org_disable_agent(org_id: UUID, package_id: UUID, admin_org_id: UUID =
     return {"ok": True, "disabled": True}
 
 
+@app.get("/orgs/{org_id}/members")
+async def org_list_members(org_id: UUID, admin_org_id: UUID = Depends(require_admin_org), session: AsyncSession = Depends(get_session)):
+    if org_id != admin_org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    ms = (await session.execute(select(Membership).where(Membership.org_id == org_id).order_by(Membership.created_at.asc()))).scalars().all()
+    user_ids = [m.user_id for m in ms]
+    users = (
+        (await session.execute(select(User).where(User.id.in_(user_ids))))  # type: ignore[arg-type]
+        .scalars()
+        .all()
+        if user_ids
+        else []
+    )
+    u_by_id = {u.id: u for u in users}
+    return {
+        "org_id": str(org_id),
+        "members": [
+            {
+                "membership_id": str(m.id),
+                "user_id": str(m.user_id),
+                "email": (u_by_id.get(m.user_id).email if u_by_id.get(m.user_id) else None),
+                "role": m.role,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in ms
+        ],
+    }
+
+
+@app.post("/orgs/{org_id}/members")
+async def org_add_member(org_id: UUID, req: AddMemberRequest, admin_org_id: UUID = Depends(require_admin_org), session: AsyncSession = Depends(get_session)):
+    if org_id != admin_org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    email = req.email.strip().lower()
+    user = (await session.execute(select(User).where(User.email == email))).scalars().first()
+    if not user:
+        # MVP: create user with a random password hash placeholder; real invite flow later.
+        user = User(email=email, password_hash=hash_password(uuid4().hex))
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+    role = (req.role or "viewer").strip().lower()
+    if role not in {"viewer", "reviewer", "admin"}:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    existing = (
+        (await session.execute(select(Membership).where(Membership.org_id == org_id).where(Membership.user_id == user.id)))
+        .scalars()
+        .first()
+    )
+    if existing:
+        existing.role = role
+        await session.merge(existing)
+        await session.commit()
+        return {"ok": True, "member": {"user_id": str(user.id), "role": existing.role}, "created": False}
+
+    m = Membership(org_id=org_id, user_id=user.id, role=role)
+    session.add(m)
+    await session.commit()
+    await session.refresh(m)
+    return {"ok": True, "member": {"user_id": str(user.id), "role": m.role}, "created": True}
+
+
+@app.post("/orgs/{org_id}/members/{user_id}/role")
+async def org_update_member_role(
+    org_id: UUID,
+    user_id: UUID,
+    req: UpdateMemberRoleRequest,
+    admin_org_id: UUID = Depends(require_admin_org),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != admin_org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    role = (req.role or "").strip().lower()
+    if role not in {"viewer", "reviewer", "admin"}:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    m = (await session.execute(select(Membership).where(Membership.org_id == org_id).where(Membership.user_id == user_id))).scalars().first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Member not found")
+    m.role = role
+    await session.merge(m)
+    await session.commit()
+    return {"ok": True, "user_id": str(user_id), "role": m.role}
+
+
+@app.delete("/orgs/{org_id}/members/{user_id}")
+async def org_remove_member(
+    org_id: UUID,
+    user_id: UUID,
+    admin_org_id: UUID = Depends(require_admin_org),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != admin_org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    m = (await session.execute(select(Membership).where(Membership.org_id == org_id).where(Membership.user_id == user_id))).scalars().first()
+    if not m:
+        return {"ok": True, "removed": False}
+    await session.delete(m)
+    await session.commit()
+    return {"ok": True, "removed": True}
+
+
 async def _run_execution(*, execution_id: UUID) -> None:
     async for session in get_session():
         execution = (await session.execute(select(Execution).where(Execution.id == execution_id))).scalars().first()
@@ -1362,6 +1683,12 @@ async def execute(
     ctx: OrgContext = Depends(require_org_role_header("reviewer")),
     session: AsyncSession = Depends(get_session),
 ):
+    # Deprecated: all executions must be case-scoped.
+    raise HTTPException(
+        status_code=410,
+        detail="Deprecated. Use POST /orgs/{org_id}/cases/{case_id}/execute",
+    )
+
     workflow = (req.workflow or req.context.get("workflow") or "auto").strip() if isinstance(req.context, dict) else (req.workflow or "auto")
     org_id = req.org_id or (req.context.get("org_id") if isinstance(req.context, dict) else None) or ctx.org_id
     raw_case_id = req.case_id or (req.context.get("case_id") if isinstance(req.context, dict) else None)
@@ -1432,11 +1759,26 @@ async def execute_case(
     if case.org_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    workflow = (req.workflow or req.context.get("workflow") or "auto").strip() if isinstance(req.context, dict) else (req.workflow or "auto")
+    # First-class workflow (focused): AI System GDPR Compliance Review
+    workflow = "gdpr_compliance_review"
     if isinstance(req.context, dict):
         req.context["case_id"] = str(case_id)
         if ctx.org_id and "org_id" not in req.context:
             req.context["org_id"] = str(ctx.org_id)
+        # Guided intake -> orchestrator context
+        req.context["intake"] = {
+            "system_name": case.system_name,
+            "system_type": case.use_case_type,
+            "deployment_region": case.deployment_region,
+            "data_types": case.data_types,
+            "reviewer_ids": case.reviewer_ids,
+        }
+        req.context["workflow"] = workflow
+        req.context["framework_code"] = "GDPR"
+        req.context["regulation_code"] = "GDPR"
+
+    synthesized_intent = f"Review GDPR compliance for {case.system_name or 'the AI system'}"
+    req.intent = (req.intent or synthesized_intent).strip()
 
     idem = (req.idempotency_key or (req.context.get("idempotency_key") if isinstance(req.context, dict) else None) or "").strip()
     if not idem:
@@ -1481,6 +1823,21 @@ async def execute_case(
 
     background.add_task(_run_execution, execution_id=execution.id)
     return ExecuteResponse(execution_id=execution.id, status="queued")
+
+
+@app.post("/orgs/{org_id}/cases/{case_id}/execute", response_model=ExecuteResponse)
+async def org_execute_case(
+    org_id: UUID,
+    case_id: UUID,
+    req: ExecuteRequest,
+    background: BackgroundTasks,
+    ctx: OrgContext = Depends(require_org_role("reviewer")),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    # Delegate to the same logic but enforce org scoping.
+    return await execute_case(case_id=case_id, req=req, background=background, ctx=ctx, session=session)
 
 
 @app.get("/executions/{execution_id}", response_model=ExecuteResponse)
@@ -1607,9 +1964,15 @@ async def list_execution_audit(execution_id: UUID, session: AsyncSession = Depen
 
 
 @app.get("/executions/{execution_id}/timeline")
-async def execution_timeline(execution_id: UUID, session: AsyncSession = Depends(get_session)):
+async def execution_timeline(
+    execution_id: UUID,
+    ctx: OrgContext = Depends(require_org_role_header("viewer")),
+    session: AsyncSession = Depends(get_session),
+):
     execution = (await session.execute(select(Execution).where(Execution.id == execution_id))).scalars().first()
     if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    if execution.org_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Execution not found")
 
     steps = (
