@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.executor.models.schemas import RunRequest, RunResponse
 from app.executor.services.runner import run_task
@@ -20,5 +20,11 @@ async def run(req: RunRequest) -> RunResponse:
         return RunResponse(status="completed", decision=result.decision, summary=result.summary, confidence=result.confidence)
     except Exception as e:  # noqa: BLE001
         logger.exception("run_failed task_id=%s", req.task_id)
-        raise HTTPException(status_code=500, detail={"status": "failed", "reason": str(e)})
+        # Spec: never crash the server. Return a failed response instead.
+        return RunResponse(
+            status="failed",
+            decision="PARTIAL",
+            summary=f"Execution failed: {str(e)}",
+            confidence=0.0,
+        )
 
