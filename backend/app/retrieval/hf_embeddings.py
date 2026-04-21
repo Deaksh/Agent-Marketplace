@@ -24,9 +24,16 @@ class HfEmbeddingClient:
         timeout_s: float = 60.0,
         max_attempts: int = 4,
     ) -> list[float]:
-        # Use the canonical Inference API model endpoint (more widely supported than `/pipeline/...`),
-        # and ask HF to wait for cold-started models instead of returning 503.
-        url = f"https://api-inference.huggingface.co/models/{self._model}"
+        # HF changed public Inference API routing for pipeline tasks for many models.
+        # For feature-extraction embeddings, the router endpoint is the most reliable:
+        #   https://router.huggingface.co/hf-inference/models/<model>/pipeline/feature-extraction
+        #
+        # We keep a fallback to the legacy api-inference /models endpoint for older models,
+        # but note that its input schema varies by task.
+        urls = [
+            f"https://router.huggingface.co/hf-inference/models/{self._model}/pipeline/feature-extraction",
+            f"https://api-inference.huggingface.co/models/{self._model}",
+        ]
         headers = {"authorization": f"Bearer {self._token}"}
         payload: dict[str, Any] = {
             "inputs": text,
@@ -34,39 +41,66 @@ class HfEmbeddingClient:
         }
 
         last_exc: Exception | None = None
+        data: Any | None = None
         async with httpx.AsyncClient(timeout=timeout_s) as client:
-            for attempt in range(max_attempts):
-                try:
-                    resp = await client.post(url, headers=headers, json=payload)
-                    # If the model is still warming up, HF commonly returns 503 with an
-                    # `estimated_time` field; we retry with backoff.
-                    if resp.status_code in {429, 503, 504}:
-                        try:
-                            body = resp.json()
-                        except Exception:  # noqa: BLE001
-                            body = None
-                        est = None
-                        if isinstance(body, dict):
-                            est = body.get("estimated_time")
-                        # Backoff: use HF hint when present, otherwise exponential.
-                        delay_s = float(est) if isinstance(est, (int, float)) else float(min(8.0, 0.75 * (2**attempt)))
-                        await asyncio.sleep(max(0.25, min(12.0, delay_s)))
-                        continue
+            # Try each endpoint; for transient failures, retry with backoff.
+            for url in urls:
+                for attempt in range(max_attempts):
+                    try:
+                        resp = await client.post(url, headers=headers, json=payload)
+                        # If the model is still warming up, HF commonly returns 503 with an
+                        # `estimated_time` field; we retry with backoff.
+                        if resp.status_code in {429, 503, 504}:
+                            try:
+                                body = resp.json()
+                            except Exception:  # noqa: BLE001
+                                body = None
+                            est = None
+                            if isinstance(body, dict):
+                                est = body.get("estimated_time")
+                            # Backoff: use HF hint when present, otherwise exponential.
+                            delay_s = float(est) if isinstance(est, (int, float)) else float(min(8.0, 0.75 * (2**attempt)))
+                            await asyncio.sleep(max(0.25, min(12.0, delay_s)))
+                            continue
 
-                    resp.raise_for_status()
-                    data = resp.json()
+                        # If an endpoint doesn't exist for this model/task, try next url.
+                        if resp.status_code == 404:
+                            break
+
+                        if resp.status_code >= 400:
+                            # Bubble up a useful message; HF often returns JSON with details.
+                            body_text = resp.text
+                            raise httpx.HTTPStatusError(
+                                f"HTTP {resp.status_code} from HF ({url}): {body_text[:500]}",
+                                request=resp.request,
+                                response=resp,
+                            )
+
+                        data = resp.json()
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        last_exc = e
+                        # Retry a couple of transient network failures as well.
+                        if attempt < max_attempts - 1:
+                            await asyncio.sleep(float(min(8.0, 0.75 * (2**attempt))))
+                            continue
+                        # Try next URL after final attempt for this URL.
+                        break
+                else:
+                    # no break => exhausted attempts for this URL; try next URL
+                    continue
+
+                # We only reach here if we got a response body (`data`) or a 404 break.
+                if data is not None:
                     break
-                except Exception as e:  # noqa: BLE001
-                    last_exc = e
-                    # Retry a couple of transient network failures as well.
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(float(min(8.0, 0.75 * (2**attempt))))
-                        continue
-                    raise
             else:
                 if last_exc:
                     raise last_exc
                 raise RuntimeError("HF embedding request failed without exception")
+
+        if data is None:
+            # We tried all known endpoints; surface the last exception.
+            raise RuntimeError("HF embedding request failed (no response body)") from last_exc
 
         if isinstance(data, dict) and "error" in data:
             # HF sometimes returns 200 with an error payload.
