@@ -20,7 +20,7 @@ export default function CasesPage() {
   const [sess, setSess] = useState<{ accessToken: string; orgId: string } | null>(null);
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [pending, setPending] = useState(false);
-  const [title, setTitle] = useState("EU AI Act compliance review — Hiring tool");
+  const [title, setTitle] = useState("GDPR compliance review — AI hiring tool");
   const [description, setDescription] = useState("Assess compliance before deployment. Collect evidence, cite regulations/controls, produce a decision.");
   const [systemName, setSystemName] = useState("AI hiring tool");
   const [systemType, setSystemType] = useState<"chatbot" | "hiring" | "recommendation" | "other">("hiring");

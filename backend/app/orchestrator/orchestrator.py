@@ -158,6 +158,7 @@ class Orchestrator:
             state["explainability"] = explainability
 
             decision = self._build_decision_v1(state=state, audit_trail=audit_trail)
+            decision_json = decision.model_dump(mode="json")
             outcome = Outcome(
                 execution_id=execution.id,
                 result={
@@ -168,7 +169,7 @@ class Orchestrator:
                     "audit_trail": audit_trail,
                     "explainability": explainability,
                     # New, decision-first schema (kept alongside legacy fields for compatibility).
-                    "decision": decision.model_dump(),
+                    "decision": decision_json,
                 },
                 confidence=confidence,
                 explainability_trace=explainability,
