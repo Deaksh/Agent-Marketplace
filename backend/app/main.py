@@ -24,6 +24,8 @@ from app.agents.builtin.report_generator import ReportGeneratorAgent
 from app.agents.builtin.risk_scorer import RiskScorerAgent
 from app.agents.registry import AgentRegistry, spec_to_dict
 from app.core.config import settings
+from app.auth.deps import require_org_context, require_user
+from app.auth.rbac import OrgContext, require_org_role, require_org_role_header
 from app.auth.jwt import create_access_token, decode_access_token, hash_password, verify_password
 from app.db.models import Agent as AgentRow
 from app.db.models import (
@@ -63,6 +65,7 @@ class ExecuteRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     workflow: str | None = None
     org_id: UUID | None = None
+    case_id: UUID | None = None
     idempotency_key: str | None = None
 
 
@@ -144,6 +147,17 @@ class CreateCaseRequest(BaseModel):
     org_id: UUID | None = None
 
 
+class UpdateCaseRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=3)
+    description: str | None = None
+    owner_id: str | None = None
+
+
+class FinalizeCaseRequest(BaseModel):
+    status: str = Field(..., min_length=2)  # APPROVED|REJECTED
+    final_decision: dict[str, Any] = Field(default_factory=dict)
+
+
 class CaseTransitionRequest(BaseModel):
     status: str = Field(..., min_length=2)  # DRAFT|IN_REVIEW|APPROVED|REJECTED
     final_decision: dict[str, Any] | None = None
@@ -172,53 +186,6 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
-
-
-def _bearer_token(authorization: str | None) -> str | None:
-    if not authorization:
-        return None
-    parts = authorization.split(" ", 1)
-    if len(parts) != 2:
-        return None
-    if parts[0].lower() != "bearer":
-        return None
-    return parts[1].strip() or None
-
-
-async def require_user(
-    authorization: str | None = Header(default=None),
-    session: AsyncSession = Depends(get_session),
-) -> User:
-    token = _bearer_token(authorization)
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    try:
-        claims = decode_access_token(token)
-    except Exception:  # noqa: BLE001
-        raise HTTPException(status_code=401, detail="Invalid token")
-    u = (await session.execute(select(User).where(User.id == UUID(claims.sub)))).scalars().first()
-    if not u:
-        raise HTTPException(status_code=401, detail="Unknown user")
-    return u
-
-
-async def require_org_context(
-    user: User = Depends(require_user),
-    x_org_id: str | None = Header(default=None),
-    session: AsyncSession = Depends(get_session),
-) -> UUID:
-    memberships = (await session.execute(select(Membership).where(Membership.user_id == user.id))).scalars().all()
-    if not memberships:
-        raise HTTPException(status_code=403, detail="User has no org memberships")
-    if x_org_id:
-        try:
-            oid = UUID(x_org_id)
-        except Exception:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail="Invalid X-Org-Id")
-        if not any(m.org_id == oid for m in memberships):
-            raise HTTPException(status_code=403, detail="Not a member of org")
-        return oid
-    return memberships[0].org_id
 
 
 async def require_admin_org(
@@ -375,13 +342,19 @@ async def auth_register(req: RegisterRequest, session: AsyncSession = Depends(ge
     await session.commit()
     await session.refresh(user)
 
-    # Create or reuse org, and grant admin membership.
-    org = (await session.execute(select(Org).where(Org.name == req.org_name))).scalars().first()
-    if not org:
-        org = Org(name=req.org_name)
-        session.add(org)
-        await session.commit()
-        await session.refresh(org)
+    # B2C-first: auto-provision a personal org/workspace for the new user.
+    # We avoid reusing by name to prevent accidental cross-tenant collisions.
+    desired = (req.org_name or "").strip()
+    if not desired or desired == "default":
+        desired = email
+    candidate = desired
+    # Ensure unique org name; fallback to deterministic suffix.
+    if (await session.execute(select(Org).where(Org.name == candidate))).scalars().first():
+        candidate = f"{desired}-{str(user.id)[:8]}"
+    org = Org(name=candidate)
+    session.add(org)
+    await session.commit()
+    await session.refresh(org)
 
     session.add(Membership(user_id=user.id, org_id=org.id, role="admin"))
     await session.commit()
@@ -413,14 +386,47 @@ async def me(user: User = Depends(require_user), session: AsyncSession = Depends
 @app.post("/cases", response_model=CaseResponse)
 async def create_case(
     req: CreateCaseRequest,
-    org_id: UUID = Depends(require_org_context),
-    user: User = Depends(require_user),
+    ctx: OrgContext = Depends(require_org_role_header("reviewer")),
     session: AsyncSession = Depends(get_session),
 ):
     c = ComplianceCase(
         title=req.title,
         description=req.description or "",
-        owner_id=req.owner_id or str(user.id),
+        owner_id=req.owner_id or str(ctx.user.id),
+        org_id=ctx.org_id,
+        status="DRAFT",
+    )
+    session.add(c)
+    await session.commit()
+    await session.refresh(c)
+    return CaseResponse(
+        case_id=c.id,
+        title=c.title,
+        description=c.description,
+        owner_id=c.owner_id,
+        org_id=c.org_id,
+        status=c.status,
+        final_decision=c.final_decision,
+        linked_executions=[],
+        created_at=c.created_at.isoformat() if c.created_at else None,
+        updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        finalized_at=c.finalized_at.isoformat() if c.finalized_at else None,
+    )
+
+
+@app.post("/orgs/{org_id}/cases", response_model=CaseResponse)
+async def org_create_case(
+    org_id: UUID,
+    req: CreateCaseRequest,
+    ctx: OrgContext = Depends(require_org_role("reviewer")),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    c = ComplianceCase(
+        title=req.title,
+        description=req.description or "",
+        owner_id=req.owner_id or str(ctx.user.id),
         org_id=org_id,
         status="DRAFT",
     )
@@ -447,9 +453,64 @@ async def list_cases(
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    org_id: UUID = Depends(require_org_context),
+    ctx: OrgContext = Depends(require_org_role_header("viewer")),
     session: AsyncSession = Depends(get_session),
 ):
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+
+    q = select(ComplianceCase)
+    if status:
+        q = q.where(ComplianceCase.status == status)
+    q = q.where(ComplianceCase.org_id == ctx.org_id)
+    q = q.order_by(ComplianceCase.updated_at.desc()).offset(offset).limit(limit)
+    rows = (await session.execute(q)).scalars().all()
+
+    ids = [r.id for r in rows]
+    ex_rows = (
+        (await session.execute(select(Execution.case_id, Execution.id).where(Execution.case_id.in_(ids))))  # type: ignore[arg-type]
+        .all()
+        if ids
+        else []
+    )
+    ex_by_case: dict[UUID, list[UUID]] = {}
+    for cid, eid in ex_rows:
+        if cid and eid:
+            ex_by_case.setdefault(cid, []).append(eid)
+
+    return {
+        "limit": limit,
+        "offset": offset,
+        "cases": [
+            CaseResponse(
+                case_id=r.id,
+                title=r.title,
+                description=r.description,
+                owner_id=r.owner_id,
+                org_id=r.org_id,
+                status=r.status,
+                final_decision=r.final_decision,
+                linked_executions=ex_by_case.get(r.id, []),
+                created_at=r.created_at.isoformat() if r.created_at else None,
+                updated_at=r.updated_at.isoformat() if r.updated_at else None,
+                finalized_at=r.finalized_at.isoformat() if r.finalized_at else None,
+            ).model_dump()
+            for r in rows
+        ],
+    }
+
+
+@app.get("/orgs/{org_id}/cases")
+async def org_list_cases(
+    org_id: UUID,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    ctx: OrgContext = Depends(require_org_role("viewer")),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
 
@@ -495,12 +556,137 @@ async def list_cases(
 
 
 @app.get("/cases/{case_id}", response_model=CaseResponse)
-async def get_case(case_id: UUID, org_id: UUID = Depends(require_org_context), session: AsyncSession = Depends(get_session)):
+async def get_case(
+    case_id: UUID,
+    ctx: OrgContext = Depends(require_org_role_header("viewer")),
+    session: AsyncSession = Depends(get_session),
+):
     c = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
     if not c:
         raise HTTPException(status_code=404, detail="Case not found")
-    if c.org_id != org_id:
+    if c.org_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Case not found")
+
+    ex_ids = (
+        (await session.execute(select(Execution.id).where(Execution.case_id == case_id).order_by(Execution.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    return CaseResponse(
+        case_id=c.id,
+        title=c.title,
+        description=c.description,
+        owner_id=c.owner_id,
+        org_id=c.org_id,
+        status=c.status,
+        final_decision=c.final_decision,
+        linked_executions=ex_ids,
+        created_at=c.created_at.isoformat() if c.created_at else None,
+        updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        finalized_at=c.finalized_at.isoformat() if c.finalized_at else None,
+    )
+
+
+@app.get("/orgs/{org_id}/cases/{case_id}", response_model=CaseResponse)
+async def org_get_case(
+    org_id: UUID,
+    case_id: UUID,
+    ctx: OrgContext = Depends(require_org_role("viewer")),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    c = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
+    if not c or c.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    ex_ids = (
+        (await session.execute(select(Execution.id).where(Execution.case_id == case_id).order_by(Execution.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    return CaseResponse(
+        case_id=c.id,
+        title=c.title,
+        description=c.description,
+        owner_id=c.owner_id,
+        org_id=c.org_id,
+        status=c.status,
+        final_decision=c.final_decision,
+        linked_executions=ex_ids,
+        created_at=c.created_at.isoformat() if c.created_at else None,
+        updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        finalized_at=c.finalized_at.isoformat() if c.finalized_at else None,
+    )
+
+
+@app.patch("/orgs/{org_id}/cases/{case_id}", response_model=CaseResponse)
+async def org_update_case(
+    org_id: UUID,
+    case_id: UUID,
+    req: UpdateCaseRequest,
+    ctx: OrgContext = Depends(require_org_role("reviewer")),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    c = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
+    if not c or c.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    if req.title is not None:
+        c.title = req.title
+    if req.description is not None:
+        c.description = req.description
+    if req.owner_id is not None:
+        c.owner_id = req.owner_id
+    c.updated_at = datetime.utcnow()
+    await session.merge(c)
+    await session.commit()
+
+    ex_ids = (
+        (await session.execute(select(Execution.id).where(Execution.case_id == case_id).order_by(Execution.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    return CaseResponse(
+        case_id=c.id,
+        title=c.title,
+        description=c.description,
+        owner_id=c.owner_id,
+        org_id=c.org_id,
+        status=c.status,
+        final_decision=c.final_decision,
+        linked_executions=ex_ids,
+        created_at=c.created_at.isoformat() if c.created_at else None,
+        updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        finalized_at=c.finalized_at.isoformat() if c.finalized_at else None,
+    )
+
+
+@app.post("/orgs/{org_id}/cases/{case_id}/finalize", response_model=CaseResponse)
+async def org_finalize_case(
+    org_id: UUID,
+    case_id: UUID,
+    req: FinalizeCaseRequest,
+    ctx: OrgContext = Depends(require_org_role("reviewer")),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
+    c = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
+    if not c or c.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    new_status = req.status.strip().upper()
+    if new_status not in {"APPROVED", "REJECTED"}:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    c.status = new_status
+    c.finalized_at = datetime.utcnow()
+    c.updated_at = datetime.utcnow()
+    c.final_decision = req.final_decision or {}
+    await session.merge(c)
+    await session.commit()
 
     ex_ids = (
         (await session.execute(select(Execution.id).where(Execution.case_id == case_id).order_by(Execution.created_at.desc())))
@@ -526,13 +712,13 @@ async def get_case(case_id: UUID, org_id: UUID = Depends(require_org_context), s
 async def transition_case(
     case_id: UUID,
     req: CaseTransitionRequest,
-    org_id: UUID = Depends(require_org_context),
+    ctx: OrgContext = Depends(require_org_role_header("reviewer")),
     session: AsyncSession = Depends(get_session),
 ):
     c = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
     if not c:
         raise HTTPException(status_code=404, detail="Case not found")
-    if c.org_id != org_id:
+    if c.org_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Case not found")
 
     new_status = req.status.strip().upper()
@@ -572,9 +758,35 @@ async def transition_case(
 async def export_case(
     case_id: UUID,
     format: str | None = None,
-    org_id: UUID = Depends(require_org_context),
+    ctx: OrgContext = Depends(require_org_role_header("viewer")),
     session: AsyncSession = Depends(get_session),
 ):
+    c = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
+    if not c or c.org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    export = await build_case_export(session=session, case_id=case_id)
+    fmt = (format or "json").lower().strip()
+    if fmt == "pdf":
+        pdf_bytes = render_case_export_pdf(export=export)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"content-disposition": f'attachment; filename=\"case-{case_id}.pdf\"'},
+        )
+    return export
+
+
+@app.get("/orgs/{org_id}/cases/{case_id}/export")
+async def org_export_case(
+    org_id: UUID,
+    case_id: UUID,
+    format: str | None = None,
+    ctx: OrgContext = Depends(require_org_role("viewer")),
+    session: AsyncSession = Depends(get_session),
+):
+    if org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Org not found")
     c = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
     if not c or c.org_id != org_id:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -1144,12 +1356,30 @@ async def _run_execution(*, execution_id: UUID) -> None:
 
 
 @app.post("/execute", response_model=ExecuteResponse)
-async def execute(req: ExecuteRequest, background: BackgroundTasks, session: AsyncSession = Depends(get_session)):
+async def execute(
+    req: ExecuteRequest,
+    background: BackgroundTasks,
+    ctx: OrgContext = Depends(require_org_role_header("reviewer")),
+    session: AsyncSession = Depends(get_session),
+):
     workflow = (req.workflow or req.context.get("workflow") or "auto").strip() if isinstance(req.context, dict) else (req.workflow or "auto")
-    org_id = req.org_id or (req.context.get("org_id") if isinstance(req.context, dict) else None)
+    org_id = req.org_id or (req.context.get("org_id") if isinstance(req.context, dict) else None) or ctx.org_id
+    raw_case_id = req.case_id or (req.context.get("case_id") if isinstance(req.context, dict) else None)
+    if not raw_case_id:
+        raise HTTPException(status_code=400, detail="case_id required")
+    try:
+        case_uuid = raw_case_id if isinstance(raw_case_id, UUID) else UUID(str(raw_case_id))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="Invalid case_id")
+    case = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_uuid))).scalars().first()
+    if not case or case.org_id != org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+
     if isinstance(req.context, dict) and org_id and "org_id" not in req.context:
         # Ensure orchestrator can see org_id for marketplace selection.
         req.context["org_id"] = str(org_id)
+    if isinstance(req.context, dict) and "case_id" not in req.context:
+        req.context["case_id"] = str(case.id)
 
     idem = (req.idempotency_key or (req.context.get("idempotency_key") if isinstance(req.context, dict) else None) or "").strip()
     if idem:
@@ -1169,6 +1399,7 @@ async def execute(req: ExecuteRequest, background: BackgroundTasks, session: Asy
     execution_kwargs: dict[str, Any] = {
         "idempotency_key": (idem or None),
         "org_id": org_id,
+        "case_id": case.id,
         "intent": req.intent,
         "context": req.context,
         "workflow": workflow or "auto",
@@ -1192,26 +1423,26 @@ async def execute_case(
     case_id: UUID,
     req: ExecuteRequest,
     background: BackgroundTasks,
-    org_id: UUID = Depends(require_org_context),
+    ctx: OrgContext = Depends(require_org_role_header("reviewer")),
     session: AsyncSession = Depends(get_session),
 ):
     case = (await session.execute(select(ComplianceCase).where(ComplianceCase.id == case_id))).scalars().first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    if case.org_id != org_id:
+    if case.org_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Case not found")
 
     workflow = (req.workflow or req.context.get("workflow") or "auto").strip() if isinstance(req.context, dict) else (req.workflow or "auto")
     if isinstance(req.context, dict):
         req.context["case_id"] = str(case_id)
-        if org_id and "org_id" not in req.context:
-            req.context["org_id"] = str(org_id)
+        if ctx.org_id and "org_id" not in req.context:
+            req.context["org_id"] = str(ctx.org_id)
 
     idem = (req.idempotency_key or (req.context.get("idempotency_key") if isinstance(req.context, dict) else None) or "").strip()
     if not idem:
         idem_payload = {
             "case_id": str(case_id),
-            "org_id": str(org_id) if org_id else None,
+            "org_id": str(ctx.org_id) if ctx.org_id else None,
             "workflow": workflow or "auto",
             "intent": req.intent,
             "context": req.context,
@@ -1237,7 +1468,7 @@ async def execute_case(
     execution = Execution(
         id=uuid5(NAMESPACE_URL, f"oel:{idem}"),
         idempotency_key=idem,
-        org_id=org_id,
+        org_id=ctx.org_id,
         case_id=case_id,
         intent=req.intent,
         context=req.context,
@@ -1253,9 +1484,15 @@ async def execute_case(
 
 
 @app.get("/executions/{execution_id}", response_model=ExecuteResponse)
-async def get_execution(execution_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_execution(
+    execution_id: UUID,
+    ctx: OrgContext = Depends(require_org_role_header("viewer")),
+    session: AsyncSession = Depends(get_session),
+):
     execution = (await session.execute(select(Execution).where(Execution.id == execution_id))).scalars().first()
     if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    if execution.org_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Execution not found")
 
     outcome = (await session.execute(select(Outcome).where(Outcome.execution_id == execution_id))).scalars().first()
