@@ -20,22 +20,23 @@ class RunResponse(BaseModel):
 
 
 class WatchtowerTask(BaseModel):
-    id: str
+    # Beacon commonly uses integer ids; allow both.
+    id: int | str
     regulation_id: str | None = None
     regulation_version_id: str | None = None
-    model_id: str | None = None
+    model_id: int | str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
 
 
 class WatchtowerRegulation(BaseModel):
-    id: str
+    id: int | str
     text: str | None = None
     units: list[dict[str, Any]] = Field(default_factory=list)
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class WatchtowerModel(BaseModel):
-    id: str
+    id: int | str
     description: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
 
