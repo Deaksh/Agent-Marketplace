@@ -118,13 +118,24 @@ async def fetch_regulation(*, regulation_id: str | int, client: httpx.AsyncClien
     base = _base()
     regulation_id = str(regulation_id)
     try:
-        return await _get_json_first_ok(
+        data = await _get_json_first_ok(
             client=client,
             urls=[f"{base}/regulations/{regulation_id}"],
         )
     except httpx.HTTPStatusError as e:
         if e.response.status_code != 404:
             raise
+        data = {}
+
+    # Beacon /api/execution/regulations/{id} may return {"regulation": {...}}.
+    if isinstance(data, dict) and isinstance(data.get("regulation"), dict):
+        data = data["regulation"]
+
+    if isinstance(data, dict) and "id" not in data:
+        data = {**data, "id": regulation_id}
+    if data:
+        return data
+
     # Beacon lists /regulations without /{id}; pick from collection.
     resp = await client.get(f"{base}/regulations")
     resp.raise_for_status()
