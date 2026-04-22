@@ -126,13 +126,42 @@ async def fetch_regulation(*, regulation_id: str, client: httpx.AsyncClient) -> 
 
 async def fetch_model(*, model_id: str, client: httpx.AsyncClient) -> dict[str, Any]:
     base = _base()
-    data = await _get_json_first_ok(
-        client=client,
-        urls=[
-            f"{base}/models/{model_id}",
-            f"{base}/company/models/{model_id}",
-        ],
-    )
+    try:
+        data = await _get_json_first_ok(
+            client=client,
+            urls=[
+                f"{base}/models/{model_id}",
+                f"{base}/company/models/{model_id}",
+            ],
+        )
+    except httpx.HTTPStatusError as e:
+        # Beacon may expose /company/models/{id} but not allow GET (405). Fall back to collection.
+        if e.response.status_code not in (404, 405):
+            raise
+        data = {}
+
+    if not data:
+        resp = await client.get(f"{base}/company/models")
+        resp.raise_for_status()
+        raw = resp.json()
+        rows: list[Any] = []
+        if isinstance(raw, list):
+            rows = raw
+        elif isinstance(raw, dict):
+            for k in ("items", "models", "data", "results"):
+                v = raw.get(k)
+                if isinstance(v, list):
+                    rows = v
+                    break
+        for r in rows:
+            if isinstance(r, dict) and str(r.get("id")) == str(model_id):
+                data = r
+                break
+
+    if not data:
+        logger.warning("model_not_found model_id=%s", model_id)
+        data = {"id": model_id, "description": "", "meta": {}}
+
     if isinstance(data, dict) and "id" not in data:
         mid = data.get("model_id") or model_id
         data = {**data, "id": str(mid)}
