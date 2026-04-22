@@ -58,12 +58,18 @@ def _derive_task_refs(task_raw: dict[str, Any], task: WatchtowerTask) -> tuple[s
     Try common alternative keys so the executor can still run.
     """
     ctx = task.context or {}
+    reg_obj = task_raw.get("regulation") if isinstance(task_raw, dict) else None
+    if not isinstance(reg_obj, dict):
+        reg_obj = None
+
     regulation_id = _coalesce(
         task.regulation_id,
         task.regulation_version_id,
         task_raw.get("regulation_id"),
         task_raw.get("regulation_version_id"),
-        task_raw.get("regulation"),
+        (reg_obj.get("id") if reg_obj else None),
+        (reg_obj.get("short_code") if reg_obj else None),
+        task_raw.get("regulation"),  # sometimes a code string
         task_raw.get("regulation_code"),
         task_raw.get("source_regulation"),
         ctx.get("regulation_id"),

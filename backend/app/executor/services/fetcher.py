@@ -68,6 +68,17 @@ async def fetch_task(*, task_id: str, client: httpx.AsyncClient) -> dict[str, An
                     data = r
                     break
 
+    # Beacon /api/execution/tasks/{id} may return {"task": {...}, "regulation": {...}, "model": {...}}
+    if isinstance(data, dict) and isinstance(data.get("task"), dict):
+        task_obj = data.get("task") or {}
+        # keep related objects accessible to downstream derivation logic
+        task_obj = {
+            **task_obj,
+            "regulation": data.get("regulation"),
+            "model": data.get("model"),
+        }
+        data = task_obj
+
     if isinstance(data, dict) and "id" not in data:
         tid = data.get("task_id") or task_id
         data = {**data, "id": str(tid)}
@@ -103,8 +114,9 @@ def _pick_regulation_from_collection(raw: Any, regulation_id: str) -> dict[str, 
     return None
 
 
-async def fetch_regulation(*, regulation_id: str, client: httpx.AsyncClient) -> dict[str, Any]:
+async def fetch_regulation(*, regulation_id: str | int, client: httpx.AsyncClient) -> dict[str, Any]:
     base = _base()
+    regulation_id = str(regulation_id)
     try:
         return await _get_json_first_ok(
             client=client,
