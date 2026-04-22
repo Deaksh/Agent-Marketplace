@@ -15,6 +15,17 @@ from app.executor.services.fetcher import fetch_model, fetch_regulation, fetch_t
 logger = logging.getLogger("executor")
 
 
+def _watchtower_client_trust_env(base_url: str) -> bool:
+    """
+    Loopback HTTP often breaks when HTTP(S)_PROXY is set; public HTTPS (e.g. Codespaces
+    *.app.github.dev) may need env trust for proxies/custom CA bundles.
+    """
+    u = base_url.strip().lower()
+    if u.startswith("http://127.0.0.1") or u.startswith("http://localhost"):
+        return False
+    return True
+
+
 def _task_context_str(ctx: dict[str, Any]) -> str:
     parts: list[str] = []
     for k, v in sorted(ctx.items(), key=lambda kv: kv[0]):
@@ -31,8 +42,8 @@ async def run_task(*, task_id: str) -> AnalysisResult:
         executor_settings.watchtower_base_url.rstrip("/"),
     )
     timeout = httpx.Timeout(executor_settings.http_timeout_s)
-    # Do not use HTTP(S)_PROXY for loopback Watchtower; proxies often break localhost.
-    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+    trust = _watchtower_client_trust_env(executor_settings.watchtower_base_url)
+    async with httpx.AsyncClient(timeout=timeout, trust_env=trust) as client:
         task_raw = await fetch_task(task_id=task_id, client=client)
         task = WatchtowerTask.model_validate(task_raw)
         logger.info("task_fetched task_id=%s regulation_id=%s model_id=%s", task_id, task.regulation_id, task.model_id)
