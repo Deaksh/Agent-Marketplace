@@ -49,6 +49,19 @@ async def run_task(*, task_id: str) -> AnalysisResult:
         task_id,
         executor_settings.watchtower_base_url.rstrip("/"),
     )
+    if executor_settings.dev_mock_watchtower:
+        logger.warning("EXECUTOR_DEV_MOCK_WATCHTOWER=1 — skipping Beacon HTTP (dev only)")
+        return await run_compliance_analysis(
+            input_data=AnalysisInput(
+                regulation_text=(
+                    "(dev mock) Lawfulness, fairness and transparency; purpose limitation; "
+                    "data minimization; accuracy; storage limitation; integrity and confidentiality (GDPR-style)."
+                ),
+                model_description="(dev mock) System that processes personal data for operational decisions.",
+                task_context=f"task_id={task_id}",
+            )
+        )
+
     timeout = httpx.Timeout(executor_settings.http_timeout_s)
     trust = _watchtower_client_trust_env(executor_settings.watchtower_base_url)
     headers = _watchtower_default_headers()

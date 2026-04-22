@@ -49,6 +49,9 @@ class ExecutorSettings(BaseSettings):
     # If GET /tasks/{id} returns 405, set POST (check Beacon OpenAPI for allowed methods).
     watchtower_task_http_method: Literal["GET", "POST"] = "GET"
 
+    # Dev only: run analysis without calling Beacon (no URL, no admin key). Not for production.
+    dev_mock_watchtower: bool = False
+
 
 executor_settings = ExecutorSettings()
 
