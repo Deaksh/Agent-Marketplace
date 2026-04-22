@@ -42,6 +42,45 @@ def _task_context_str(ctx: dict[str, Any]) -> str:
         parts.append(f"{k}: {v}")
     return "\n".join(parts)
 
+def _coalesce(*vals: Any) -> str | None:
+    for v in vals:
+        if v is None:
+            continue
+        if isinstance(v, str) and v.strip() == "":
+            continue
+        return str(v)
+    return None
+
+
+def _derive_task_refs(task_raw: dict[str, Any], task: WatchtowerTask) -> tuple[str | None, str | None]:
+    """
+    Beacon task objects may not use `regulation_id` / `model_id`.
+    Try common alternative keys so the executor can still run.
+    """
+    ctx = task.context or {}
+    regulation_id = _coalesce(
+        task.regulation_id,
+        task.regulation_version_id,
+        task_raw.get("regulation_id"),
+        task_raw.get("regulation_version_id"),
+        task_raw.get("regulation"),
+        task_raw.get("regulation_code"),
+        ctx.get("regulation_id"),
+        ctx.get("regulation_version_id"),
+        ctx.get("regulation"),
+        ctx.get("regulation_code"),
+    )
+    model_id = _coalesce(
+        task.model_id,
+        task_raw.get("model_id"),
+        task_raw.get("company_model_id"),
+        task_raw.get("model"),
+        ctx.get("model_id"),
+        ctx.get("company_model_id"),
+        ctx.get("model"),
+    )
+    return regulation_id, model_id
+
 
 async def run_task(*, task_id: str) -> AnalysisResult:
     logger.info(
@@ -68,27 +107,27 @@ async def run_task(*, task_id: str) -> AnalysisResult:
     async with httpx.AsyncClient(timeout=timeout, trust_env=trust, headers=headers) as client:
         task_raw = await fetch_task(task_id=task_id, client=client)
         task = WatchtowerTask.model_validate(task_raw)
-        logger.info("task_fetched task_id=%s regulation_id=%s model_id=%s", task_id, task.regulation_id, task.model_id)
+        regulation_id, model_id = _derive_task_refs(task_raw, task)
+        logger.info("task_fetched task_id=%s regulation_id=%s model_id=%s", task_id, regulation_id, model_id)
 
-        if not task.regulation_id and not task.regulation_version_id:
-            raise ValueError("task missing regulation_id/regulation_version_id")
-        if not task.model_id:
-            raise ValueError("task missing model_id")
+        regulation: WatchtowerRegulation | None = None
+        model: WatchtowerModel | None = None
 
-        regulation_id = task.regulation_id or task.regulation_version_id or ""
-        reg_raw = await fetch_regulation(regulation_id=regulation_id, client=client)
-        regulation = WatchtowerRegulation.model_validate(reg_raw)
+        if regulation_id:
+            reg_raw = await fetch_regulation(regulation_id=regulation_id, client=client)
+            regulation = WatchtowerRegulation.model_validate(reg_raw)
 
-        model_raw = await fetch_model(model_id=task.model_id, client=client)
-        model = WatchtowerModel.model_validate(model_raw)
+        if model_id:
+            model_raw = await fetch_model(model_id=model_id, client=client)
+            model = WatchtowerModel.model_validate(model_raw)
 
-        reg_text = (regulation.text or "").strip()
-        if not reg_text and regulation.units:
+        reg_text = ((regulation.text if regulation else "") or "").strip()
+        if regulation and not reg_text and regulation.units:
             reg_text = "\n\n".join([str(u.get("text") or "") for u in regulation.units if isinstance(u, dict) and u.get("text")])
 
         input_data = AnalysisInput(
             regulation_text=reg_text,
-            model_description=(model.description or "").strip(),
+            model_description=(((model.description if model else "") or "").strip()),
             task_context=_task_context_str(task.context or {}),
         )
 
@@ -102,6 +141,24 @@ async def run_task(*, task_id: str) -> AnalysisResult:
             "evidence": result.evidence,
             "confidence": result.confidence,
         }
+
+        # If Beacon didn't provide core identifiers, degrade gracefully (still return a result)
+        # while making it obvious in the summary/evidence.
+        if not regulation_id or not model_id:
+            missing: list[str] = []
+            if not regulation_id:
+                missing.append("regulation_id")
+            if not model_id:
+                missing.append("model_id")
+            payload["evidence"] = {
+                **(payload.get("evidence") or {}),
+                "watchtower_missing_fields": missing,
+                "watchtower_task_id": str(task_id),
+            }
+            payload["summary"] = (
+                f"{payload.get('summary')}\n\n"
+                f"Note: Beacon task did not include {', '.join(missing)}; executor ran with limited context."
+            )
 
         last_err: Exception | None = None
         for attempt in range(1, int(executor_settings.result_post_retry_attempts) + 1):
