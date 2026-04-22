@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,6 +41,13 @@ class ExecutorSettings(BaseSettings):
     result_post_retry_attempts: int = 2  # initial try + 1 retry
     # Beacon OpenAPI has no POST /tasks/{id}/result; set True until that route exists.
     skip_result_post: bool = False
+
+    # Beacon may require the same admin key as /admin/* (see 401/405 without it).
+    watchtower_api_key: str | None = None
+    watchtower_api_key_header: str = "X-Admin-Api-Key"
+
+    # If GET /tasks/{id} returns 405, set POST (check Beacon OpenAPI for allowed methods).
+    watchtower_task_http_method: Literal["GET", "POST"] = "GET"
 
 
 executor_settings = ExecutorSettings()

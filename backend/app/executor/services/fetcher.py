@@ -30,10 +30,16 @@ async def _get_json_first_ok(*, client: httpx.AsyncClient, urls: list[str]) -> d
 
 
 async def fetch_task(*, task_id: str, client: httpx.AsyncClient) -> dict[str, Any]:
-    data = await _get_json_first_ok(
-        client=client,
-        urls=[f"{_base()}/tasks/{task_id}"],
-    )
+    url = f"{_base()}/tasks/{task_id}"
+    method = executor_settings.watchtower_task_http_method.strip().upper()
+    if method == "GET":
+        resp = await client.get(url)
+    elif method == "POST":
+        resp = await client.post(url, json={})
+    else:
+        raise ValueError(f"Unsupported watchtower_task_http_method: {method!r}")
+    resp.raise_for_status()
+    data = resp.json()
     if isinstance(data, dict) and "id" not in data:
         tid = data.get("task_id") or task_id
         data = {**data, "id": str(tid)}
