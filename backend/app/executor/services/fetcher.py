@@ -127,9 +127,27 @@ async def fetch_regulation(*, regulation_id: str | int, client: httpx.AsyncClien
             raise
         data = {}
 
-    # Beacon /api/execution/regulations/{id} may return {"regulation": {...}}.
+    # Beacon /api/execution/regulations/{id} may return:
+    # { id, short_code, regulation: {...}, latest_versions: [{content, ...}, ...] }
     if isinstance(data, dict) and isinstance(data.get("regulation"), dict):
-        data = data["regulation"]
+        reg_obj = data.get("regulation") or {}
+        # Build a best-effort text blob from latest_versions content if present.
+        text = ""
+        lv = data.get("latest_versions")
+        if isinstance(lv, list):
+            chunks: list[str] = []
+            for v in lv:
+                if isinstance(v, dict):
+                    c = (v.get("content") or "").strip()
+                    if c:
+                        chunks.append(c)
+            text = "\n\n".join(chunks)
+        data = {
+            **reg_obj,
+            "text": text or (reg_obj.get("text") or ""),
+            "units": (data.get("latest_versions") if isinstance(data.get("latest_versions"), list) else []),
+            "meta": {k: v for k, v in data.items() if k not in ("regulation", "latest_versions")},
+        }
 
     if isinstance(data, dict) and "id" not in data:
         data = {**data, "id": regulation_id}

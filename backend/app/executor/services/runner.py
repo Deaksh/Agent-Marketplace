@@ -166,8 +166,12 @@ async def run_task(*, task_id: str) -> AnalysisResult:
             regulation = WatchtowerRegulation.model_validate(reg_raw)
 
         if model_id:
-            model_raw = await fetch_model(model_id=model_id, client=client)
-            model = WatchtowerModel.model_validate(model_raw)
+            try:
+                model_raw = await fetch_model(model_id=model_id, client=client)
+                model = WatchtowerModel.model_validate(model_raw)
+            except Exception as e:  # noqa: BLE001
+                logger.info("model_fetch_failed model_id=%s error=%s", model_id, str(e))
+                model = WatchtowerModel.model_validate({"id": model_id, "description": ""})
 
         reg_text = ((regulation.text if regulation else "") or "").strip()
         if regulation and not reg_text and regulation.units:
@@ -175,7 +179,23 @@ async def run_task(*, task_id: str) -> AnalysisResult:
 
         input_data = AnalysisInput(
             regulation_text=reg_text,
-            model_description=(((model.description if model else "") or "").strip()),
+            model_description=(
+                (
+                    ((model.description if model else "") or "").strip()
+                    or " | ".join(
+                        [
+                            s
+                            for s in [
+                                (task_raw.get("model_name") if isinstance(task_raw, dict) else None),
+                                (task_raw.get("feature_name") if isinstance(task_raw, dict) else None),
+                                (task_raw.get("title") if isinstance(task_raw, dict) else None),
+                                (task_raw.get("description") if isinstance(task_raw, dict) else None),
+                            ]
+                            if isinstance(s, str) and s.strip()
+                        ]
+                    )
+                ).strip()
+            ),
             task_context=_task_context_str(task.context or {}),
         )
 
