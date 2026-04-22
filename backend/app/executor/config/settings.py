@@ -47,8 +47,8 @@ class ExecutorSettings(BaseSettings):
     # Beacon's OpenAPI commonly declares this header as "x-api-key"
     watchtower_api_key_header: str = "x-api-key"
 
-    # How to fetch /tasks/{task_id}. Beacon may expose PATCH-only for /tasks/{id}.
-    watchtower_task_http_method: Literal["GET", "POST", "PATCH"] = "GET"
+    # How to fetch /tasks/{task_id}. Beacon exposes PATCH-only for /tasks/{id}.
+    watchtower_task_http_method: Literal["GET", "POST", "PATCH"] = "PATCH"
 
     # Dev only: run analysis without calling Beacon (no URL, no admin key). Not for production.
     dev_mock_watchtower: bool = False

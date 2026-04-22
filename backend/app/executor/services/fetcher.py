@@ -62,6 +62,12 @@ async def fetch_task(*, task_id: str, client: httpx.AsyncClient) -> dict[str, An
     return data
 
 
+async def fetch_task_events(*, task_id: str, client: httpx.AsyncClient) -> Any:
+    resp = await client.get(f"{_base()}/tasks/{task_id}/events")
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _pick_regulation_from_collection(raw: Any, regulation_id: str) -> dict[str, Any] | None:
     """Handle GET /regulations list shapes: list, or dict with common list keys."""
     rows: list[Any] = []
@@ -125,5 +131,12 @@ async def post_result(*, task_id: str, payload: dict[str, Any], client: httpx.As
     if executor_settings.skip_result_post:
         logger.info("skip_result_post task_id=%s (set EXECUTOR_SKIP_RESULT_POST=true)", task_id)
         return
-    resp = await client.post(f"{_base()}/tasks/{task_id}/result", json=payload)
+    # Beacon doesn't implement POST /tasks/{id}/result; write back via PATCH /tasks/{id}.
+    resp = await client.patch(
+        f"{_base()}/tasks/{task_id}",
+        json={
+            "executor_result": payload,
+            "executor_status": "completed",
+        },
+    )
     resp.raise_for_status()

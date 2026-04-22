@@ -9,7 +9,7 @@ import httpx
 from app.executor.config.settings import executor_settings
 from app.executor.models.schemas import AnalysisInput, AnalysisResult, WatchtowerModel, WatchtowerRegulation, WatchtowerTask
 from app.executor.services.analyzer import run_compliance_analysis
-from app.executor.services.fetcher import fetch_model, fetch_regulation, fetch_task, post_result
+from app.executor.services.fetcher import fetch_model, fetch_regulation, fetch_task, fetch_task_events, post_result
 
 
 logger = logging.getLogger("executor")
@@ -82,6 +82,39 @@ def _derive_task_refs(task_raw: dict[str, Any], task: WatchtowerTask) -> tuple[s
     return regulation_id, model_id
 
 
+def _derive_refs_from_events(events_raw: Any) -> tuple[str | None, str | None]:
+    """
+    Beacon tasks may keep useful identifiers in /tasks/{id}/events.
+    Try to extract regulation/model identifiers from common shapes.
+    """
+    rows: list[Any] = []
+    if isinstance(events_raw, list):
+        rows = events_raw
+    elif isinstance(events_raw, dict):
+        for k in ("events", "items", "data", "results"):
+            v = events_raw.get(k)
+            if isinstance(v, list):
+                rows = v
+                break
+        if not rows:
+            rows = [events_raw]
+
+    reg: str | None = None
+    model: str | None = None
+    for ev in rows:
+        if not isinstance(ev, dict):
+            continue
+        payload = ev.get("payload")
+        if isinstance(payload, dict):
+            reg = reg or _coalesce(payload.get("regulation_id"), payload.get("regulation_code"), payload.get("regulation"))
+            model = model or _coalesce(payload.get("model_id"), payload.get("company_model_id"), payload.get("model"))
+        reg = reg or _coalesce(ev.get("regulation_id"), ev.get("regulation_code"), ev.get("regulation"))
+        model = model or _coalesce(ev.get("model_id"), ev.get("company_model_id"), ev.get("model"))
+        if reg and model:
+            break
+    return reg, model
+
+
 async def run_task(*, task_id: str) -> AnalysisResult:
     logger.info(
         "task_received task_id=%s watchtower_base=%s",
@@ -108,6 +141,14 @@ async def run_task(*, task_id: str) -> AnalysisResult:
         task_raw = await fetch_task(task_id=task_id, client=client)
         task = WatchtowerTask.model_validate(task_raw)
         regulation_id, model_id = _derive_task_refs(task_raw, task)
+        if not regulation_id or not model_id:
+            try:
+                events_raw = await fetch_task_events(task_id=task_id, client=client)
+                ev_reg, ev_model = _derive_refs_from_events(events_raw)
+                regulation_id = regulation_id or ev_reg
+                model_id = model_id or ev_model
+            except Exception as e:  # noqa: BLE001
+                logger.info("task_events_unavailable task_id=%s error=%s", task_id, str(e))
         logger.info("task_fetched task_id=%s regulation_id=%s model_id=%s", task_id, regulation_id, model_id)
 
         regulation: WatchtowerRegulation | None = None
