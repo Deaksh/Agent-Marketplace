@@ -33,11 +33,13 @@ class ExecutorSettings(BaseSettings):
         extra="ignore",
     )
 
-    # Prefer 127.0.0.1: some environments resolve "localhost" to ::1 while the
-    # peer only listens on IPv4, which produces httpx "All connection attempts failed".
-    watchtower_base_url: str = "http://127.0.0.1:8000/api/execution"
+    # Origin only (no path): paths are /tasks/..., /regulations/..., etc. Beacon exposes
+    # /tasks/{task_id} at the root, not under /api/execution.
+    watchtower_base_url: str = "http://127.0.0.1:8000"
     http_timeout_s: float = 20.0
     result_post_retry_attempts: int = 2  # initial try + 1 retry
+    # Beacon OpenAPI has no POST /tasks/{id}/result; set True until that route exists.
+    skip_result_post: bool = False
 
 
 executor_settings = ExecutorSettings()
