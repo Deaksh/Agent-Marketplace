@@ -163,22 +163,26 @@ async def fetch_model(*, model_id: str, client: httpx.AsyncClient) -> dict[str, 
             raise
         data = {}
 
+    # Beacon may wrap as {"model": {...}}
+    if isinstance(data, dict) and isinstance(data.get("model"), dict):
+        data = data["model"]
+
     if not data:
-        resp = await client.get(f"{base}/company/models")
-        resp.raise_for_status()
-        raw = resp.json()
-        rows: list[Any] = []
-        if isinstance(raw, list):
-            rows = raw
-        elif isinstance(raw, dict):
-            for k in ("items", "models", "data", "results"):
-                v = raw.get(k)
-                if isinstance(v, list):
-                    rows = v
+        # Try model collections. Some Beacon deployments use /models only (no /company/models).
+        for collection_path in ("/company/models", "/models"):
+            resp = await client.get(f"{base}{collection_path}")
+            if resp.status_code == 404:
+                continue
+            resp.raise_for_status()
+            raw = resp.json()
+            if isinstance(raw, dict) and isinstance(raw.get("models"), list):
+                raw = raw["models"]
+            rows: list[Any] = raw if isinstance(raw, list) else []
+            for r in rows:
+                if isinstance(r, dict) and str(r.get("id")) == str(model_id):
+                    data = r
                     break
-        for r in rows:
-            if isinstance(r, dict) and str(r.get("id")) == str(model_id):
-                data = r
+            if data:
                 break
 
     if not data:
