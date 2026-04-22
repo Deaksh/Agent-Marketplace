@@ -44,10 +44,11 @@ class ExecutorSettings(BaseSettings):
 
     # Beacon may require the same admin key as /admin/* (see 401/405 without it).
     watchtower_api_key: str | None = None
-    watchtower_api_key_header: str = "X-Admin-Api-Key"
+    # Beacon's OpenAPI commonly declares this header as "x-api-key"
+    watchtower_api_key_header: str = "x-api-key"
 
-    # If GET /tasks/{id} returns 405, set POST (check Beacon OpenAPI for allowed methods).
-    watchtower_task_http_method: Literal["GET", "POST"] = "GET"
+    # How to fetch /tasks/{task_id}. Beacon may expose PATCH-only for /tasks/{id}.
+    watchtower_task_http_method: Literal["GET", "POST", "PATCH"] = "GET"
 
     # Dev only: run analysis without calling Beacon (no URL, no admin key). Not for production.
     dev_mock_watchtower: bool = False

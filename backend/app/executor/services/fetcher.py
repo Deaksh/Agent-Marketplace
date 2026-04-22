@@ -30,16 +30,29 @@ async def _get_json_first_ok(*, client: httpx.AsyncClient, urls: list[str]) -> d
 
 
 async def fetch_task(*, task_id: str, client: httpx.AsyncClient) -> dict[str, Any]:
-    url = f"{_base()}/tasks/{task_id}"
+    base = _base()
+    url = f"{base}/tasks/{task_id}"
     method = executor_settings.watchtower_task_http_method.strip().upper()
     if method == "GET":
         resp = await client.get(url)
     elif method == "POST":
         resp = await client.post(url, json={})
+    elif method == "PATCH":
+        # Beacon may only declare PATCH /tasks/{id}. We treat it as "fetch" by sending
+        # an empty object; if the API requires specific fields this will fail loudly.
+        resp = await client.patch(url, json={})
     else:
         raise ValueError(f"Unsupported watchtower_task_http_method: {method!r}")
-    resp.raise_for_status()
-    data = resp.json()
+
+    # Some Beacon deployments may only allow admin GET under /admin/tasks/{id}.
+    if resp.status_code == 405:
+        admin_resp = await client.get(f"{base}/admin/tasks/{task_id}")
+        admin_resp.raise_for_status()
+        data = admin_resp.json()
+    else:
+        resp.raise_for_status()
+        data = resp.json()
+
     if isinstance(data, dict) and "id" not in data:
         tid = data.get("task_id") or task_id
         data = {**data, "id": str(tid)}
