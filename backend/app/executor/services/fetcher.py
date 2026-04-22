@@ -56,6 +56,18 @@ async def fetch_task(*, task_id: str, client: httpx.AsyncClient) -> dict[str, An
         resp.raise_for_status()
         data = resp.json()
 
+    # Beacon PATCH /tasks/{id} often returns {"status": "no_changes"} rather than a task object.
+    # In that case, fall back to GET /tasks and select the matching row.
+    if isinstance(data, dict) and data.get("status") == "no_changes":
+        list_resp = await client.get(f"{base}/tasks")
+        list_resp.raise_for_status()
+        rows = list_resp.json()
+        if isinstance(rows, list):
+            for r in rows:
+                if isinstance(r, dict) and str(r.get("id")) == str(task_id):
+                    data = r
+                    break
+
     if isinstance(data, dict) and "id" not in data:
         tid = data.get("task_id") or task_id
         data = {**data, "id": str(tid)}

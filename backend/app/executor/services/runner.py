@@ -65,6 +65,7 @@ def _derive_task_refs(task_raw: dict[str, Any], task: WatchtowerTask) -> tuple[s
         task_raw.get("regulation_version_id"),
         task_raw.get("regulation"),
         task_raw.get("regulation_code"),
+        task_raw.get("source_regulation"),
         ctx.get("regulation_id"),
         ctx.get("regulation_version_id"),
         ctx.get("regulation"),
